@@ -1,5 +1,7 @@
 import streamlit as st
 import base64
+import numpy as np
+import math
 
 def generate_download_link(code):
     """Genera un link para descargar el código como archivo .py"""
@@ -37,18 +39,32 @@ with col2:
 
 # Parámetros de los orificios para agujas
 st.header("Orificios para Agujas")
-num_orificios = st.slider("Número de orificios para agujas", 5, 30, 15)
-diametro_orificios = st.number_input("Diámetro de los orificios (mm)", value=1.5, step=0.1)
+col1, col2 = st.columns(2)
+with col1:
+    num_orificios_base = st.slider("Número de orificios en la base", 5, 30, 15)
+    diametro_orificios = st.number_input("Diámetro de los orificios (mm)", value=1.5, step=0.1)
+
+with col2:
+    incluir_agujas_cilindro = st.checkbox("Incluir agujas que atraviesen el cilindro", value=True)
+    num_orificios_cilindro = st.slider("Número de orificios en el cilindro", 0, 12, 6, disabled=not incluir_agujas_cilindro)
 
 # Patrones de distribución
 patron_distribucion = st.selectbox("Patrón de distribución de orificios", 
-                                   ["Rectangular", "Circular", "Hexagonal", "Personalizado"])
+                                  ["Equidistante", "Rectangular", "Circular", "Hexagonal"])
+
+distribucion_equidistante = st.slider("Distancia entre orificios (mm)", 3.0, 10.0, 5.0, 0.5, 
+                                     disabled=patron_distribucion != "Equidistante")
 
 # Opciones avanzadas
 with st.expander("Opciones avanzadas"):
     tolerancia = st.number_input("Tolerancia para impresión 3D (mm)", value=0.1, step=0.01)
     material = st.selectbox("Material recomendado", ["PLA", "ABS", "PETG", "Resina médica"])
     infill = st.slider("Porcentaje de relleno recomendado", 50, 100, 80)
+    
+    altura_max_agujas = st.slider("Altura máxima de las agujas (mm)", 
+                                value=int(altura_cilindro * 0.9), 
+                                min_value=int(altura_base), 
+                                max_value=int(altura_base + altura_cilindro))
 
 # Botón para generar código
 if st.button("Generar Código FreeCAD"):
@@ -61,11 +77,15 @@ if st.button("Generar Código FreeCAD"):
 # - Radio curvatura: {radio_curvatura} mm
 # - Diámetro cilindro: {diametro_cilindro} mm
 # - Altura cilindro: {altura_cilindro} mm
+# - Patrón distribución: {patron_distribucion}
+# - Incluir agujas en cilindro: {"Sí" if incluir_agujas_cilindro else "No"}
 
 import FreeCAD as App
 import Part
 import Draft
+import math
 from FreeCAD import Base
+import random
 
 # Crear un nuevo documento
 doc = App.newDocument("TemplateBraquiterapia")
@@ -109,13 +129,44 @@ def crear_orificio_central():
     return orificio
 
 # Crear los orificios para las agujas
-def crear_orificios_agujas():
+def crear_orificios_agujas_base():
     orificios = []
     
-    if "{patron_distribucion}" == "Rectangular":
+    if "{patron_distribucion}" == "Equidistante":
+        # Anillos concéntricos con distancia definida entre orificios
+        distancia_entre_orificios = {distribucion_equidistante}
+        radio_inicial = {diametro_cilindro/2} + distancia_entre_orificios
+        radio_final = {diametro_base/2} - distancia_entre_orificios
+        
+        # Calcular número de anillos basado en la distancia entre orificios
+        num_anillos = max(1, int((radio_final - radio_inicial) / distancia_entre_orificios))
+        
+        count = 0
+        for i in range(num_anillos):
+            radio_anillo = radio_inicial + i * (radio_final - radio_inicial) / max(1, num_anillos - 1)
+            
+            # Calcular número de orificios en este anillo
+            circunferencia = 2 * math.pi * radio_anillo
+            orificios_en_anillo = max(1, int(circunferencia / distancia_entre_orificios))
+            
+            if count + orificios_en_anillo > {num_orificios_base}:
+                orificios_en_anillo = {num_orificios_base} - count
+            
+            for j in range(orificios_en_anillo):
+                if count < {num_orificios_base}:
+                    angulo = j * 360 / orificios_en_anillo
+                    x = radio_anillo * math.cos(math.radians(angulo))
+                    y = radio_anillo * math.sin(math.radians(angulo))
+                    
+                    orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
+                    orificio.translate(Base.Vector(x, y, 0))
+                    orificios.append(orificio)
+                    count += 1
+    
+    elif "{patron_distribucion}" == "Rectangular":
         # Calcular cuántas filas y columnas necesitamos
-        filas = int({num_orificios}**0.5)
-        cols = int({num_orificios} / filas) + 1
+        filas = int(math.sqrt({num_orificios_base}))
+        cols = int({num_orificios_base} / filas) + 1
         
         # Espacio entre orificios
         espacio_x = {diametro_base - diametro_cilindro} / 2 / (cols + 1)
@@ -128,13 +179,13 @@ def crear_orificios_agujas():
         count = 0
         for i in range(filas):
             for j in range(cols):
-                if count < {num_orificios}:
-                    x = x_start + j * espacio_x
-                    y = y_start + i * espacio_y
+                if count < {num_orificios_base}:
+                    x = x_start + j * espacio_x * 2
+                    y = y_start + i * espacio_y * 2
                     
                     # Verificar si está dentro del área útil (fuera del cilindro central)
                     if (x**2 + y**2)**0.5 > {diametro_cilindro/2 + diametro_orificios}:
-                        orificio = Part.makeCylinder({diametro_orificios/2}, {altura_base + altura_cilindro})
+                        orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
                         orificio.translate(Base.Vector(x, y, 0))
                         orificios.append(orificio)
                         count += 1
@@ -145,18 +196,69 @@ def crear_orificios_agujas():
         radio_ultimo_anillo = {diametro_base/2} - {diametro_orificios} * 2
         
         num_anillos = 3
-        orificios_por_anillo = {num_orificios} // num_anillos
+        orificios_por_anillo = {num_orificios_base} // num_anillos
         
         for anillo in range(num_anillos):
             radio = radio_primer_anillo + anillo * (radio_ultimo_anillo - radio_primer_anillo)/(num_anillos-1)
             for i in range(orificios_por_anillo):
                 angulo = i * 360 / orificios_por_anillo
-                x = radio * App.Units.Quantity("1 deg").getValueAs("rad").cos()
-                y = radio * App.Units.Quantity("1 deg").getValueAs("rad").sin()
+                x = radio * math.cos(math.radians(angulo))
+                y = radio * math.sin(math.radians(angulo))
                 
-                orificio = Part.makeCylinder({diametro_orificios/2}, {altura_base + altura_cilindro})
+                orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
                 orificio.translate(Base.Vector(x, y, 0))
                 orificios.append(orificio)
+    
+    elif "{patron_distribucion}" == "Hexagonal":
+        # Patrón hexagonal con distancia entre orificios
+        radio_inicial = {diametro_cilindro/2} + {diametro_orificios} * 2
+        distancia = {distribucion_equidistante}
+        radio_util = {diametro_base/2} - {diametro_orificios} * 2
+        
+        # Usar coordenadas hexagonales
+        orificios_creados = 0
+        for q in range(-10, 11):
+            for r in range(-10, 11):
+                # Calcular coordenadas cartesianas desde coordenadas hexagonales
+                x = distancia * (3/2 * q)
+                y = distancia * (math.sqrt(3)/2 * q + math.sqrt(3) * r)
+                
+                # Verificar si está dentro del área útil
+                distancia_al_centro = math.sqrt(x**2 + y**2)
+                if (distancia_al_centro <= radio_util and 
+                    distancia_al_centro >= radio_inicial and 
+                    orificios_creados < {num_orificios_base}):
+                    orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
+                    orificio.translate(Base.Vector(x, y, 0))
+                    orificios.append(orificio)
+                    orificios_creados += 1
+                    
+    return orificios
+
+# Crear orificios que atraviesan el cilindro
+def crear_orificios_cilindro():
+    orificios = []
+    
+    if {incluir_agujas_cilindro}:
+        # Distribuir orificios equidistantes alrededor del cilindro
+        for i in range({num_orificios_cilindro}):
+            # Calcular posición angular
+            angulo = i * 360 / {num_orificios_cilindro}
+            
+            # Calcular posición en el cilindro
+            x = 0
+            y = 0
+            z = {altura_base} + {altura_cilindro} / 2
+            
+            # Crear orificio horizontal
+            orificio = Part.makeCylinder({diametro_orificios/2}, {diametro_cilindro})
+            
+            # Rotar y posicionar el orificio
+            orificio.rotate(Base.Vector(0,0,0), Base.Vector(0,0,1), angulo)
+            orificio.rotate(Base.Vector(0,0,0), Base.Vector(0,1,0), 90)
+            orificio.translate(Base.Vector(x, y, z))
+            
+            orificios.append(orificio)
     
     return orificios
 
@@ -176,9 +278,14 @@ template = base.fuse(cilindro)
 orificio_central = crear_orificio_central()
 template = template.cut(orificio_central)
 
-# Crear orificios para agujas
-orificios = crear_orificios_agujas()
-for i, orificio in enumerate(orificios):
+# Crear orificios para agujas en la base
+orificios_base = crear_orificios_agujas_base()
+for i, orificio in enumerate(orificios_base):
+    template = template.cut(orificio)
+
+# Crear orificios que atraviesan el cilindro
+orificios_cilindro = crear_orificios_cilindro()
+for i, orificio in enumerate(orificios_cilindro):
     template = template.cut(orificio)
 
 # Crear el objeto final
@@ -187,7 +294,11 @@ template_obj.Shape = template
 
 # Actualizar la vista
 doc.recompute()
-Gui.SendMsgToActiveView("ViewFit")
+try:
+    import FreeCADGui
+    FreeCADGui.SendMsgToActiveView("ViewFit")
+except:
+    pass
 
 print("Template de braquiterapia generado con éxito")
 """
@@ -237,6 +348,21 @@ elif diametro_orificios > 3.0:
     st.sidebar.warning("⚠️ Orificios muy grandes pueden comprometer la integridad estructural.")
 else:
     st.sidebar.success("✅ Diámetro de orificios adecuado.")
+
+# Verificar número de orificios
+if incluir_agujas_cilindro and num_orificios_cilindro > 8:
+    st.sidebar.warning("⚠️ Un número elevado de orificios en el cilindro puede debilitar su estructura.")
+
+# Mostrar imagen de ejemplo según el tipo de distribución seleccionado
+patron_images = {
+    "Equidistante": "https://via.placeholder.com/200x200?text=Distribucion+Equidistante",
+    "Rectangular": "https://via.placeholder.com/200x200?text=Distribucion+Rectangular",
+    "Circular": "https://via.placeholder.com/200x200?text=Distribucion+Circular",
+    "Hexagonal": "https://via.placeholder.com/200x200?text=Distribucion+Hexagonal"
+}
+
+st.sidebar.subheader("Patrón seleccionado")
+st.sidebar.image(patron_images[patron_distribucion], width=200)
 
 # Instrucciones generales
 st.sidebar.subheader("Flujo de trabajo recomendado")
