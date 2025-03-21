@@ -14,16 +14,16 @@ st.image("Banner.png")
 st.title("Generador de Guías de Braquiterapia")
 st.subheader("Personalización de parámetros para impresión 3D")
 
-# Parámetros generales
+# Parámetros generales - eliminando los parámetros de curvatura
 st.header("Parámetros Generales")
 col1, col2 = st.columns(2)
 with col1:
     diametro_base = st.number_input("Diámetro de la base (mm)", value=50.0, step=0.5)
     altura_base = st.number_input("Altura de la base (mm)", value=10.0, step=0.5)
     
-with col2:
-    radio_curvatura = st.number_input("Radio de curvatura de la base (mm)", value=150.0, step=5.0)
-    angulo_curvatura = st.number_input("Ángulo de curvatura (grados)", value=30.0, step=1.0)
+# Valores predeterminados para la curvatura (no visibles para el usuario)
+radio_curvatura = 150.0
+angulo_curvatura = 30.0
 
 # Parámetros del cilindro central
 st.header("Cilindro Central")
@@ -73,7 +73,6 @@ if st.button("Generar Código FreeCAD"):
 # Parámetros personalizados:
 # - Diámetro base: {diametro_base} mm
 # - Altura base: {altura_base} mm
-# - Radio curvatura: {radio_curvatura} mm
 # - Diámetro cilindro: {diametro_cilindro} mm
 # - Altura cilindro: {altura_cilindro} mm
 # - Patrón distribución: {patron_distribucion}
@@ -94,10 +93,14 @@ def crear_base_curva():
     # Crear un cilindro base
     cilindro = Part.makeCylinder({diametro_base/2}, {altura_base})
     
+    # Parámetros de curvatura predefinidos
+    radio_curvatura = 150.0  # mm
+    angulo_curvatura = 30.0  # grados
+    
     # Crear un plano de corte para la curvatura
     plano = Part.makeBox({diametro_base*2}, {diametro_base*2}, {diametro_base*2})
-    plano.translate(Base.Vector(-{diametro_base}, -{diametro_base}, -{radio_curvatura}))
-    plano.rotate(Base.Vector(0,0,0), Base.Vector(1,0,0), {angulo_curvatura})
+    plano.translate(Base.Vector(-{diametro_base}, -{diametro_base}, -radio_curvatura))
+    plano.rotate(Base.Vector(0,0,0), Base.Vector(1,0,0), angulo_curvatura)
     
     # Cortar la base con el plano
     base_curva = cilindro.cut(plano)
@@ -234,26 +237,27 @@ def crear_orificios_agujas_base():
                     
     return orificios
 
+# Crear orificios que atraviesan el cilindro
 def crear_orificios_cilindro():
     orificios = []
     
-    if incluir_agujas_cilindro:
+    if {incluir_agujas_cilindro}:
         # Distribuir orificios equidistantes alrededor del cilindro
-        for i in range(num_orificios_cilindro):
+        for i in range({num_orificios_cilindro}):
             # Calcular posición angular
-            angulo = i * 360 / num_orificios_cilindro
+            angulo = i * 360 / {num_orificios_cilindro}
             
             # Calcular posición en el perímetro del cilindro
-            radio = diametro_cilindro/2
+            radio = {diametro_cilindro/2}
             x = radio * math.cos(math.radians(angulo))
             y = radio * math.sin(math.radians(angulo))
-            z = altura_base + altura_cilindro / 2
+            z = {altura_base} + {altura_cilindro} / 2
             
             # Crear orificio horizontal - asegurando que sea lo suficientemente largo
-            longitud_orificio = diametro_cilindro + 5  # Añadir margen para asegurar que atraviese
+            longitud_orificio = {diametro_cilindro} + 5  # Añadir margen para asegurar que atraviese
             
             # Crear el orificio centrado en el origen
-            orificio = Part.makeCylinder(diametro_orificios/2, longitud_orificio)
+            orificio = Part.makeCylinder({diametro_orificios/2}, longitud_orificio)
             
             # Rotar para que sea perpendicular al radio del cilindro
             orificio.rotate(Base.Vector(0,0,0), Base.Vector(0,0,1), angulo)
@@ -265,8 +269,8 @@ def crear_orificios_cilindro():
             # Movemos el orificio hacia adentro para que esté centrado
             offset = -longitud_orificio/2
             orificio.translate(Base.Vector(x + vector_direccion.x * offset, 
-                                           y + vector_direccion.y * offset, 
-                                           z))
+                                          y + vector_direccion.y * offset, 
+                                          z))
             
             orificios.append(orificio)
     
