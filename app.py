@@ -127,7 +127,10 @@ def crear_cilindro_central():
 
 # Crear el orificio central
 def crear_orificio_central():
-    orificio = Part.makeCylinder({diametro_orificio_central/2}, {altura_base + altura_cilindro + diametro_cilindro/2})
+    altura_total = {altura_base + altura_cilindro}
+    if "{forma_punta}" == "Redondeada" or "{forma_punta}" == "Cónica":
+        altura_total += {diametro_cilindro/2}
+    orificio = Part.makeCylinder({diametro_orificio_central/2}, altura_total)
     return orificio
 
 # Crear los orificios para las agujas
@@ -237,28 +240,28 @@ def crear_orificios_agujas_base():
                     
     return orificios
 
+# Crear orificios que atraviesan el cilindro
 def crear_orificios_cilindro():
     orificios = []
     
-    if incluir_agujas_cilindro:
+    if {incluir_agujas_cilindro}:
+        # Calcular altura total según la forma de la punta
+        altura_total = {altura_base + altura_cilindro}
+        if "{forma_punta}" == "Redondeada" or "{forma_punta}" == "Cónica":
+            altura_total += {diametro_cilindro/2}
+        
         # Distribuir orificios equidistantes alrededor del cilindro
-        for i in range(num_orificios_cilindro):
+        for i in range({num_orificios_cilindro}):
             # Calcular posición angular
-            angulo = i * 360 / num_orificios_cilindro
+            angulo = i * 360 / {num_orificios_cilindro}
             
             # Calcular posición en el perímetro del cilindro
-            radio = diametro_cilindro/2 - diametro_orificios
+            radio = {diametro_cilindro/2} * 0.7  # Usar 70% del radio para mantener distancia del borde
             x = radio * math.cos(math.radians(angulo))
             y = radio * math.sin(math.radians(angulo))
             
-            # Crear orificio vertical que vaya desde la base hasta el final del cilindro
-            altura_total = altura_base + altura_cilindro
-            if forma_punta == "Redondeada":
-                altura_total += diametro_cilindro/2
-            elif forma_punta == "Cónica":
-                altura_total += diametro_cilindro/2
-                
-            orificio = Part.makeCylinder(diametro_orificios/2, altura_total)
+            # Crear orificio vertical que vaya desde la base hasta el final (igual que el central)
+            orificio = Part.makeCylinder({diametro_orificios/2}, altura_total)
             orificio.translate(Base.Vector(x, y, 0))
             orificios.append(orificio)
     
@@ -276,18 +279,23 @@ cilindro_obj.Shape = cilindro
 # Fusionar base y cilindro
 template = base.fuse(cilindro)
 
+# Crear orificios
+orificios = []
+
 # Crear el orificio central
 orificio_central = crear_orificio_central()
-template = template.cut(orificio_central)
+orificios.append(orificio_central)
 
 # Crear orificios para agujas en la base
 orificios_base = crear_orificios_agujas_base()
-for i, orificio in enumerate(orificios_base):
-    template = template.cut(orificio)
+orificios.extend(orificios_base)
 
 # Crear orificios que atraviesan el cilindro
 orificios_cilindro = crear_orificios_cilindro()
-for i, orificio in enumerate(orificios_cilindro):
+orificios.extend(orificios_cilindro)
+
+# Cortar todos los orificios de una sola vez
+for orificio in orificios:
     template = template.cut(orificio)
 
 # Crear el objeto final
