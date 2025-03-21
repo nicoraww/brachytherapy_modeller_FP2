@@ -88,6 +88,14 @@ import random
 # Crear un nuevo documento
 doc = App.newDocument("TemplateBraquiterapia")
 
+# Calcular altura total según la forma de la punta
+altura_total = {altura_base + altura_cilindro}
+if "{forma_punta}" == "Redondeada" or "{forma_punta}" == "Cónica":
+    altura_punta = {diametro_cilindro/2}
+    altura_total += altura_punta
+else:
+    altura_punta = 0
+
 # Crear la base con curvatura
 def crear_base_curva():
     # Crear un cilindro base
@@ -127,15 +135,24 @@ def crear_cilindro_central():
 
 # Crear el orificio central
 def crear_orificio_central():
-    altura_total = {altura_base + altura_cilindro}
-    if "{forma_punta}" == "Redondeada" or "{forma_punta}" == "Cónica":
-        altura_total += {diametro_cilindro/2}
-    orificio = Part.makeCylinder({diametro_orificio_central/2}, altura_total)
+    # Crear un orificio que sea significativamente más largo que la altura total
+    # para asegurar que atraviese completamente todas las partes
+    margen_seguridad = 20  # mm adicionales en cada extremo
+    longitud_orificio = altura_total + 2 * margen_seguridad
+    
+    # Posicionar el orificio para que sobresalga por ambos extremos
+    orificio = Part.makeCylinder({diametro_orificio_central/2}, longitud_orificio)
+    orificio.translate(Base.Vector(0, 0, -margen_seguridad))
+    
     return orificio
 
 # Crear los orificios para las agujas
 def crear_orificios_agujas_base():
     orificios = []
+    
+    # Margen de seguridad para asegurar que los orificios atraviesen completamente
+    margen_seguridad = 20  # mm adicionales en cada extremo
+    longitud_orificio = altura_total + 2 * margen_seguridad
     
     if "{patron_distribucion}" == "Equidistante":
         # Anillos concéntricos con distancia definida entre orificios
@@ -163,8 +180,9 @@ def crear_orificios_agujas_base():
                     x = radio_anillo * math.cos(math.radians(angulo))
                     y = radio_anillo * math.sin(math.radians(angulo))
                     
-                    orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
-                    orificio.translate(Base.Vector(x, y, 0))
+                    # Crear orificio que sobresalga por ambos extremos
+                    orificio = Part.makeCylinder({diametro_orificios/2}, longitud_orificio)
+                    orificio.translate(Base.Vector(x, y, -margen_seguridad))
                     orificios.append(orificio)
                     count += 1
     
@@ -190,8 +208,9 @@ def crear_orificios_agujas_base():
                     
                     # Verificar si está dentro del área útil (fuera del cilindro central)
                     if (x**2 + y**2)**0.5 > {diametro_cilindro/2 + diametro_orificios}:
-                        orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
-                        orificio.translate(Base.Vector(x, y, 0))
+                        # Crear orificio que sobresalga por ambos extremos
+                        orificio = Part.makeCylinder({diametro_orificios/2}, longitud_orificio)
+                        orificio.translate(Base.Vector(x, y, -margen_seguridad))
                         orificios.append(orificio)
                         count += 1
     
@@ -210,8 +229,9 @@ def crear_orificios_agujas_base():
                 x = radio * math.cos(math.radians(angulo))
                 y = radio * math.sin(math.radians(angulo))
                 
-                orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
-                orificio.translate(Base.Vector(x, y, 0))
+                # Crear orificio que sobresalga por ambos extremos
+                orificio = Part.makeCylinder({diametro_orificios/2}, longitud_orificio)
+                orificio.translate(Base.Vector(x, y, -margen_seguridad))
                 orificios.append(orificio)
     
     elif "{patron_distribucion}" == "Hexagonal":
@@ -233,8 +253,9 @@ def crear_orificios_agujas_base():
                 if (distancia_al_centro <= radio_util and 
                     distancia_al_centro >= radio_inicial and 
                     orificios_creados < {num_orificios_base}):
-                    orificio = Part.makeCylinder({diametro_orificios/2}, {altura_max_agujas})
-                    orificio.translate(Base.Vector(x, y, 0))
+                    # Crear orificio que sobresalga por ambos extremos
+                    orificio = Part.makeCylinder({diametro_orificios/2}, longitud_orificio)
+                    orificio.translate(Base.Vector(x, y, -margen_seguridad))
                     orificios.append(orificio)
                     orificios_creados += 1
                     
@@ -244,12 +265,11 @@ def crear_orificios_agujas_base():
 def crear_orificios_cilindro():
     orificios = []
     
+    # Margen de seguridad para asegurar que los orificios atraviesen completamente
+    margen_seguridad = 20  # mm adicionales en cada extremo
+    longitud_orificio = altura_total + 2 * margen_seguridad
+    
     if {incluir_agujas_cilindro}:
-        # Calcular altura total según la forma de la punta
-        altura_total = {altura_base + altura_cilindro}
-        if "{forma_punta}" == "Redondeada" or "{forma_punta}" == "Cónica":
-            altura_total += {diametro_cilindro/2}
-        
         # Distribuir orificios equidistantes alrededor del cilindro
         for i in range({num_orificios_cilindro}):
             # Calcular posición angular
@@ -260,9 +280,9 @@ def crear_orificios_cilindro():
             x = radio * math.cos(math.radians(angulo))
             y = radio * math.sin(math.radians(angulo))
             
-            # Crear orificio vertical que vaya desde la base hasta el final (igual que el central)
-            orificio = Part.makeCylinder({diametro_orificios/2}, altura_total)
-            orificio.translate(Base.Vector(x, y, 0))
+            # Crear orificio que sobresalga por ambos extremos
+            orificio = Part.makeCylinder({diametro_orificios/2}, longitud_orificio)
+            orificio.translate(Base.Vector(x, y, -margen_seguridad))
             orificios.append(orificio)
     
     return orificios
@@ -302,11 +322,24 @@ for orificio in orificios:
 template_obj = doc.addObject("Part::Feature", "TemplateBraquiterapia")
 template_obj.Shape = template
 
+# Verificar que los orificios están correctamente hechos
+# Añadir un paso de refinamiento de malla para mejorar la representación de los orificios
+try:
+    import MeshPart
+    mesh = doc.addObject("Mesh::Feature", "Mesh")
+    mesh.Mesh = MeshPart.meshFromShape(Shape=template, LinearDeflection=0.1, AngularDeflection=0.1)
+    # Opcional: Refinar la malla cerca de los orificios
+    mesh.Mesh.refine()
+except:
+    print("No se pudo refinar la malla. Continúa con el modelo normal.")
+
 # Actualizar la vista
 doc.recompute()
 try:
     import FreeCADGui
     FreeCADGui.SendMsgToActiveView("ViewFit")
+    # Mostrar bordes para mejor visualización de los orificios
+    FreeCADGui.ActiveDocument.ActiveView.setEdgesDisplayMode("Flat Lines")
 except:
     pass
 
