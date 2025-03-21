@@ -237,41 +237,29 @@ def crear_orificios_agujas_base():
                     
     return orificios
 
-# Crear orificios que atraviesan el cilindro
 def crear_orificios_cilindro():
     orificios = []
     
-    if {incluir_agujas_cilindro}:
+    if incluir_agujas_cilindro:
         # Distribuir orificios equidistantes alrededor del cilindro
-        for i in range({num_orificios_cilindro}):
+        for i in range(num_orificios_cilindro):
             # Calcular posición angular
-            angulo = i * 360 / {num_orificios_cilindro}
+            angulo = i * 360 / num_orificios_cilindro
             
             # Calcular posición en el perímetro del cilindro
-            radio = {diametro_cilindro/2}
+            radio = diametro_cilindro/2 - diametro_orificios
             x = radio * math.cos(math.radians(angulo))
             y = radio * math.sin(math.radians(angulo))
-            z = {altura_base} + {altura_cilindro} / 2
             
-            # Crear orificio horizontal - asegurando que sea lo suficientemente largo
-            longitud_orificio = {diametro_cilindro} + 5  # Añadir margen para asegurar que atraviese
-            
-            # Crear el orificio centrado en el origen
-            orificio = Part.makeCylinder({diametro_orificios/2}, longitud_orificio)
-            
-            # Rotar para que sea perpendicular al radio del cilindro
-            orificio.rotate(Base.Vector(0,0,0), Base.Vector(0,0,1), angulo)
-            orificio.rotate(Base.Vector(0,0,0), Base.Vector(0,1,0), 90)
-            
-            # Mover el orificio a la posición correcta
-            # Calculamos el vector desde el centro hacia el perímetro
-            vector_direccion = Base.Vector(x, y, 0).normalize()
-            # Movemos el orificio hacia adentro para que esté centrado
-            offset = -longitud_orificio/2
-            orificio.translate(Base.Vector(x + vector_direccion.x * offset, 
-                                          y + vector_direccion.y * offset, 
-                                          z))
-            
+            # Crear orificio vertical que vaya desde la base hasta el final del cilindro
+            altura_total = altura_base + altura_cilindro
+            if forma_punta == "Redondeada":
+                altura_total += diametro_cilindro/2
+            elif forma_punta == "Cónica":
+                altura_total += diametro_cilindro/2
+                
+            orificio = Part.makeCylinder(diametro_orificios/2, altura_total)
+            orificio.translate(Base.Vector(x, y, 0))
             orificios.append(orificio)
     
     return orificios
