@@ -234,28 +234,39 @@ def crear_orificios_agujas_base():
                     
     return orificios
 
-# Crear orificios que atraviesan el cilindro
 def crear_orificios_cilindro():
     orificios = []
     
-    if {incluir_agujas_cilindro}:
+    if incluir_agujas_cilindro:
         # Distribuir orificios equidistantes alrededor del cilindro
-        for i in range({num_orificios_cilindro}):
+        for i in range(num_orificios_cilindro):
             # Calcular posición angular
-            angulo = i * 360 / {num_orificios_cilindro}
+            angulo = i * 360 / num_orificios_cilindro
             
-            # Calcular posición en el cilindro
-            x = 0
-            y = 0
-            z = {altura_base} + {altura_cilindro} / 2
+            # Calcular posición en el perímetro del cilindro
+            radio = diametro_cilindro/2
+            x = radio * math.cos(math.radians(angulo))
+            y = radio * math.sin(math.radians(angulo))
+            z = altura_base + altura_cilindro / 2
             
-            # Crear orificio horizontal
-            orificio = Part.makeCylinder({diametro_orificios/2}, {diametro_cilindro})
+            # Crear orificio horizontal - asegurando que sea lo suficientemente largo
+            longitud_orificio = diametro_cilindro + 5  # Añadir margen para asegurar que atraviese
             
-            # Rotar y posicionar el orificio
+            # Crear el orificio centrado en el origen
+            orificio = Part.makeCylinder(diametro_orificios/2, longitud_orificio)
+            
+            # Rotar para que sea perpendicular al radio del cilindro
             orificio.rotate(Base.Vector(0,0,0), Base.Vector(0,0,1), angulo)
             orificio.rotate(Base.Vector(0,0,0), Base.Vector(0,1,0), 90)
-            orificio.translate(Base.Vector(x, y, z))
+            
+            # Mover el orificio a la posición correcta
+            # Calculamos el vector desde el centro hacia el perímetro
+            vector_direccion = Base.Vector(x, y, 0).normalize()
+            # Movemos el orificio hacia adentro para que esté centrado
+            offset = -longitud_orificio/2
+            orificio.translate(Base.Vector(x + vector_direccion.x * offset, 
+                                           y + vector_direccion.y * offset, 
+                                           z))
             
             orificios.append(orificio)
     
