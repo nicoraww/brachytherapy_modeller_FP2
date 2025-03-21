@@ -9,11 +9,10 @@ def generate_download_link(code):
     href = f'<a href="data:file/txt;base64,{b64}" download="template_braquiterapia.py">Descargar código</a>'
     return href
 
+st.image("Banner.png")
+
 st.title("Generador de Guías de Braquiterapia")
 st.subheader("Personalización de parámetros para impresión 3D")
-
-# Imagen de muestra (opcional)
-st.image("Banner.png")
 
 # Parámetros generales
 st.header("Parámetros Generales")
