@@ -360,9 +360,6 @@ patron_images = {
     "Hexagonal": "https://via.placeholder.com/200x200?text=Distribucion+Hexagonal"
 }
 
-st.sidebar.subheader("Patrón seleccionado")
-st.sidebar.image(patron_images[patron_distribucion], width=200)
-
 # Instrucciones generales
 st.sidebar.subheader("Flujo de trabajo recomendado")
 st.sidebar.markdown("""
