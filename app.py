@@ -8,7 +8,7 @@ import streamlit as st
 import SimpleITK as sitk
 
 # Configuración de página y estilo
-st.set_page_config(layout="wide", page_title="DieSitCom")
+st.set_page_config(layout="wide", page_title="Brachyanalysis")
 
 # CSS personalizado para aplicar los colores solicitados
 st.markdown("""
@@ -71,21 +71,31 @@ st.markdown("""
     div.stRadio > div[role="radiogroup"] > label[data-baseweb="radio"] > div:first-child {
         background-color: #28aec5;
     }
+    .upload-section {
+        background-color: rgba(40, 174, 197, 0.05);
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    .stUploadButton>button {
+        background-color: #c0d711;
+        color: #1e1e1e;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Encabezado principal
-st.markdown('<p class="main-header">DieSitCom</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
 
-# Layout de dos columnas para controles y visualización
-col1, col2 = st.columns([1, 2])
+# Sección de carga de archivos
+st.markdown('<div class="upload-section">', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
 
-with col1:
-    st.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
-    
-    # Opción para seleccionar entre directorios existentes o subir archivos
-    option = st.radio("Seleccionar método de entrada:", ["Seleccionar directorio", "Subir archivos DICOM (ZIP)"])
+# Solo opción de subir ZIP
+uploaded_file = st.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Función para buscar recursivamente archivos DICOM en un directorio
 def find_dicom_series(directory):
@@ -101,46 +111,10 @@ def find_dicom_series(directory):
                 if series_files:
                     series_found.append((series_id, root, series_files))
         except Exception as e:
-            with col1:
-                st.warning(f"Advertencia al buscar en {root}: {str(e)}")
+            st.warning(f"Advertencia al buscar en {root}: {str(e)}")
             continue
     
     return series_found
-
-with col1:
-    if option == "Seleccionar directorio":
-        # Función para seleccionar directorios
-        def dir_selector(folder_path='.'):
-            dirnames = [d for d in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, d))]
-            if not dirnames:
-                st.info("No se encontraron directorios en la ruta actual.")
-                return None
-            selected_folder = st.selectbox('Seleccionar carpeta', dirnames)
-            if selected_folder is None:
-                return None
-            return os.path.join(folder_path, selected_folder)
-        
-        dirname = dir_selector()
-        temp_dir = None  # No hay directorio temporal para este caso
-    else:
-        # Opción para subir archivos como ZIP
-        uploaded_file = st.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
-        dirname = None
-        temp_dir = None
-        
-        if uploaded_file is not None:
-            # Crear un directorio temporal para extraer los archivos
-            temp_dir = tempfile.mkdtemp()
-            try:
-                # Leer el contenido del ZIP
-                with zipfile.ZipFile(io.BytesIO(uploaded_file.read()), 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
-                
-                # Establecer dirname al directorio temporal
-                dirname = temp_dir
-                st.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Error al extraer el archivo ZIP: {str(e)}")
 
 def plot_slice(vol, slice_ix):
     fig, ax = plt.subplots()
@@ -149,60 +123,59 @@ def plot_slice(vol, slice_ix):
     ax.imshow(selected_slice, origin='lower', cmap='gray')
     return fig
 
+# Procesar archivos subidos
+dirname = None
+temp_dir = None
+
+if uploaded_file is not None:
+    # Crear un directorio temporal para extraer los archivos
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Leer el contenido del ZIP
+        with zipfile.ZipFile(io.BytesIO(uploaded_file.read()), 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Establecer dirname al directorio temporal
+        dirname = temp_dir
+        st.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error al extraer el archivo ZIP: {str(e)}")
+
 if dirname is not None:
     # Buscar todas las series DICOM recursivamente
-    with col1:
-        with st.spinner('Buscando series DICOM...'):
-            dicom_series = find_dicom_series(dirname)
+    with st.spinner('Buscando series DICOM...'):
+        dicom_series = find_dicom_series(dirname)
     
     if not dicom_series:
-        with col1:
-            st.error("No se encontraron archivos DICOM válidos en el directorio seleccionado/subido.")
-            # Mostrar el contenido del directorio para depuración
-            st.markdown('<p class="sub-header">Contenido del directorio:</p>', unsafe_allow_html=True)
-            files_found = []
-            for root, dirs, files in os.walk(dirname):
-                for file in files:
-                    files_found.append(os.path.join(root, file))
-            if files_found:
-                st.code("\n".join(files_found[:20]))  # Mostrar hasta 20 archivos
-                if len(files_found) > 20:
-                    st.write(f"... y {len(files_found) - 20} archivos más")
-            else:
-                st.write("No se encontraron archivos en el directorio")
+        st.error("No se encontraron archivos DICOM válidos en el directorio subido.")
     else:
         # Mostrar las series encontradas
-        with col1:
-            st.markdown(f'<div class="info-box">Se encontraron {len(dicom_series)} series DICOM</div>', unsafe_allow_html=True)
-            
-            # Si hay múltiples series, permitir seleccionar una
-            selected_series_idx = 0
-            if len(dicom_series) > 1:
-                series_options = [f"Serie {i+1}: {series_id[:10]}... ({len(files)} archivos)" 
-                                for i, (series_id, _, files) in enumerate(dicom_series)]
-                selected_series_option = st.selectbox("Seleccionar serie DICOM:", series_options)
-                selected_series_idx = series_options.index(selected_series_option)
-            
-            try:
-                # Obtener la serie seleccionada
-                series_id, series_dir, dicom_names = dicom_series[selected_series_idx]
-                
-                reader = sitk.ImageSeriesReader()
-                reader.SetFileNames(dicom_names)
-                reader.LoadPrivateTagsOn()
-                reader.MetaDataDictionaryArrayUpdateOn()
-                data = reader.Execute()
-                img = sitk.GetArrayViewFromImage(data)
-            
-                n_slices = img.shape[0]
-                slice_ix = st.slider('Seleccionar corte', 0, n_slices - 1, int(n_slices/2))
-                output = st.radio('Tipo de visualización', ['Imagen', 'Metadatos'], index=0)
-            except Exception as e:
-                st.error(f"Error al procesar los archivos DICOM: {str(e)}")
-                st.write("Detalles del error:", str(e))
+        st.markdown(f'<div class="info-box">Se encontraron {len(dicom_series)} series DICOM</div>', unsafe_allow_html=True)
         
-        with col2:
-            if 'output' in locals() and output == 'Imagen':
+        # Si hay múltiples series, permitir seleccionar una
+        selected_series_idx = 0
+        if len(dicom_series) > 1:
+            series_options = [f"Serie {i+1}: {series_id[:10]}... ({len(files)} archivos)" 
+                            for i, (series_id, _, files) in enumerate(dicom_series)]
+            selected_series_option = st.selectbox("Seleccionar serie DICOM:", series_options)
+            selected_series_idx = series_options.index(selected_series_option)
+        
+        try:
+            # Obtener la serie seleccionada
+            series_id, series_dir, dicom_names = dicom_series[selected_series_idx]
+            
+            reader = sitk.ImageSeriesReader()
+            reader.SetFileNames(dicom_names)
+            reader.LoadPrivateTagsOn()
+            reader.MetaDataDictionaryArrayUpdateOn()
+            data = reader.Execute()
+            img = sitk.GetArrayViewFromImage(data)
+        
+            n_slices = img.shape[0]
+            slice_ix = st.slider('Seleccionar corte', 0, n_slices - 1, int(n_slices/2))
+            output = st.radio('Tipo de visualización', ['Imagen', 'Metadatos'], index=0)
+            
+            if output == 'Imagen':
                 st.markdown('<p class="sub-header">Visualización DICOM</p>', unsafe_allow_html=True)
                 st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                 fig = plot_slice(img, slice_ix)
@@ -223,7 +196,7 @@ if dirname is not None:
                     with info_cols[i % 2]:
                         st.markdown(f"**{key}:** {value}")
                 
-            elif 'output' in locals() and output == 'Metadatos':
+            elif output == 'Metadatos':
                 st.markdown('<p class="sub-header">Metadatos DICOM</p>', unsafe_allow_html=True)
                 try:
                     metadata = dict()
@@ -233,17 +206,20 @@ if dirname is not None:
                     st.dataframe(df, height=600)
                 except Exception as e:
                     st.error(f"Error al leer metadatos: {str(e)}")
+        except Exception as e:
+            st.error(f"Error al procesar los archivos DICOM: {str(e)}")
+            st.write("Detalles del error:", str(e))
 
 # Pie de página
 st.markdown("""
 <hr style="margin-top: 30px;">
 <div style="text-align: center; color: #28aec5; font-size: 14px;">
-    DieSitCom - Visualizador de imágenes DICOM
+    Brachyanalysis - Visualizador de imágenes DICOM
 </div>
 """, unsafe_allow_html=True)
 
 # Limpiar el directorio temporal si se creó uno
-if option == "Subir archivos DICOM (ZIP)" and temp_dir and os.path.exists(temp_dir):
+if temp_dir and os.path.exists(temp_dir):
     # Nota: En una aplicación real, deberías limpiar los directorios temporales
     # cuando la aplicación se cierre, pero en Streamlit esto es complicado
     # ya que las sesiones persisten. Una solución es mantener un registro
