@@ -20,6 +20,16 @@ st.markdown("""
         margin-bottom: 20px;
         font-weight: bold;
     }
+    .giant-title {
+        color: #28aec5;
+        text-align: center;
+        font-size: 72px;
+        margin: 30px 0;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
     .sub-header {
         color: #c0d711;
         font-size: 24px;
@@ -82,11 +92,17 @@ st.markdown("""
         color: #1e1e1e;
         font-weight: bold;
     }
+    .sidebar-title {
+        color: #28aec5;
+        font-size: 28px;
+        font-weight: bold;
+        margin-bottom: 15px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Configuración de la barra lateral
-st.sidebar.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
+st.sidebar.markdown('<p class="sidebar-title">Brachyanalysis</p>', unsafe_allow_html=True)
 st.sidebar.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
 
 # Sección de carga de archivos en la barra lateral
@@ -185,8 +201,10 @@ if dirname is not None:
             st.sidebar.write("Detalles del error:", str(e))
 
 # Visualización en la ventana principal
+# Título grande siempre visible
+st.markdown('<p class="giant-title">Brachyanalysis</p>', unsafe_allow_html=True)
+
 if img is not None and output == 'Imagen':
-    st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Visualización DICOM</p>', unsafe_allow_html=True)
     
     # Muestra la imagen en la ventana principal
@@ -205,7 +223,6 @@ if img is not None and output == 'Imagen':
         st.markdown(f"**Min/Max:** {img[slice_ix].min():.1f} / {img[slice_ix].max():.1f}")
         
 elif img is not None and output == 'Metadatos':
-    st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Metadatos DICOM</p>', unsafe_allow_html=True)
     try:
         metadata = dict()
@@ -217,11 +234,10 @@ elif img is not None and output == 'Metadatos':
         st.error(f"Error al leer metadatos: {str(e)}")
 else:
     # Página de inicio cuando no hay imágenes cargadas
-    st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
     
     st.markdown("""
-    <div style="text-align: center; padding: 40px; margin-top: 40px;">
+    <div style="text-align: center; padding: 40px; margin-top: 10px;">
         <img src="https://raw.githubusercontent.com/SimpleITK/SimpleITK/master/Documentation/docs/images/simpleitk-logo.svg" alt="SimpleITK Logo" width="200">
         <h2 style="color: #28aec5; margin-top: 20px;">Carga un archivo ZIP con tus imágenes DICOM</h2>
         <p style="font-size: 18px; margin-top: 10px;">Utiliza el panel lateral para subir tus archivos y visualizarlos</p>
