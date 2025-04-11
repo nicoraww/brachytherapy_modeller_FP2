@@ -164,8 +164,8 @@ slice_ix = 0
 reader = None
 
 if dirname is not None:
-    # Buscar todas las series DICOM recursivamente
-    with st.sidebar.spinner('Buscando series DICOM...'):
+    # Usar un spinner en el área principal en lugar de en la barra lateral
+    with st.spinner('Buscando series DICOM...'):
         dicom_series = find_dicom_series(dirname)
     
     if not dicom_series:
