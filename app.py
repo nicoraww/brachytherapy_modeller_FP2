@@ -85,17 +85,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Encabezado principal
-st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
+# Configuración de la barra lateral
+st.sidebar.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
+st.sidebar.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
 
-# Sección de carga de archivos
-st.markdown('<div class="upload-section">', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
+# Sección de carga de archivos en la barra lateral
+st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
 
 # Solo opción de subir ZIP
-uploaded_file = st.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
-st.markdown('</div>', unsafe_allow_html=True)
+uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
 # Función para buscar recursivamente archivos DICOM en un directorio
 def find_dicom_series(directory):
@@ -111,13 +109,13 @@ def find_dicom_series(directory):
                 if series_files:
                     series_found.append((series_id, root, series_files))
         except Exception as e:
-            st.warning(f"Advertencia al buscar en {root}: {str(e)}")
+            st.sidebar.warning(f"Advertencia al buscar en {root}: {str(e)}")
             continue
     
     return series_found
 
 def plot_slice(vol, slice_ix):
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(12, 10))
     plt.axis('off')
     selected_slice = vol[slice_ix, :, :]
     ax.imshow(selected_slice, origin='lower', cmap='gray')
@@ -137,27 +135,35 @@ if uploaded_file is not None:
         
         # Establecer dirname al directorio temporal
         dirname = temp_dir
-        st.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
+        st.sidebar.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
     except Exception as e:
-        st.error(f"Error al extraer el archivo ZIP: {str(e)}")
+        st.sidebar.error(f"Error al extraer el archivo ZIP: {str(e)}")
+
+# Inicializar variables para la visualización
+dicom_series = None
+img = None
+output = None
+n_slices = 0
+slice_ix = 0
+reader = None
 
 if dirname is not None:
     # Buscar todas las series DICOM recursivamente
-    with st.spinner('Buscando series DICOM...'):
+    with st.sidebar.spinner('Buscando series DICOM...'):
         dicom_series = find_dicom_series(dirname)
     
     if not dicom_series:
-        st.error("No se encontraron archivos DICOM válidos en el directorio subido.")
+        st.sidebar.error("No se encontraron archivos DICOM válidos en el archivo subido.")
     else:
         # Mostrar las series encontradas
-        st.markdown(f'<div class="info-box">Se encontraron {len(dicom_series)} series DICOM</div>', unsafe_allow_html=True)
+        st.sidebar.markdown(f'<div class="info-box">Se encontraron {len(dicom_series)} series DICOM</div>', unsafe_allow_html=True)
         
         # Si hay múltiples series, permitir seleccionar una
         selected_series_idx = 0
         if len(dicom_series) > 1:
             series_options = [f"Serie {i+1}: {series_id[:10]}... ({len(files)} archivos)" 
                             for i, (series_id, _, files) in enumerate(dicom_series)]
-            selected_series_option = st.selectbox("Seleccionar serie DICOM:", series_options)
+            selected_series_option = st.sidebar.selectbox("Seleccionar serie DICOM:", series_options)
             selected_series_idx = series_options.index(selected_series_option)
         
         try:
@@ -172,43 +178,55 @@ if dirname is not None:
             img = sitk.GetArrayViewFromImage(data)
         
             n_slices = img.shape[0]
-            slice_ix = st.slider('Seleccionar corte', 0, n_slices - 1, int(n_slices/2))
-            output = st.radio('Tipo de visualización', ['Imagen', 'Metadatos'], index=0)
-            
-            if output == 'Imagen':
-                st.markdown('<p class="sub-header">Visualización DICOM</p>', unsafe_allow_html=True)
-                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
-                fig = plot_slice(img, slice_ix)
-                plot = st.pyplot(fig)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # Información adicional sobre la imagen
-                st.markdown('<p class="sub-header">Información de la imagen</p>', unsafe_allow_html=True)
-                img_info = {
-                    "Dimensiones": f"{img.shape[1]} x {img.shape[2]} píxeles",
-                    "Número total de cortes": n_slices,
-                    "Corte actual": slice_ix + 1,
-                    "Valores mín/máx": f"{img[slice_ix].min()} / {img[slice_ix].max()}"
-                }
-                
-                info_cols = st.columns(2)
-                for i, (key, value) in enumerate(img_info.items()):
-                    with info_cols[i % 2]:
-                        st.markdown(f"**{key}:** {value}")
-                
-            elif output == 'Metadatos':
-                st.markdown('<p class="sub-header">Metadatos DICOM</p>', unsafe_allow_html=True)
-                try:
-                    metadata = dict()
-                    for k in reader.GetMetaDataKeys(slice_ix):
-                        metadata[k] = reader.GetMetaData(slice_ix, k)
-                    df = pd.DataFrame.from_dict(metadata, orient='index', columns=['Valor'])
-                    st.dataframe(df, height=600)
-                except Exception as e:
-                    st.error(f"Error al leer metadatos: {str(e)}")
+            slice_ix = st.sidebar.slider('Seleccionar corte', 0, n_slices - 1, int(n_slices/2))
+            output = st.sidebar.radio('Tipo de visualización', ['Imagen', 'Metadatos'], index=0)
         except Exception as e:
-            st.error(f"Error al procesar los archivos DICOM: {str(e)}")
-            st.write("Detalles del error:", str(e))
+            st.sidebar.error(f"Error al procesar los archivos DICOM: {str(e)}")
+            st.sidebar.write("Detalles del error:", str(e))
+
+# Visualización en la ventana principal
+if img is not None and output == 'Imagen':
+    st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Visualización DICOM</p>', unsafe_allow_html=True)
+    
+    # Muestra la imagen en la ventana principal
+    fig = plot_slice(img, slice_ix)
+    st.pyplot(fig)
+    
+    # Información adicional sobre la imagen
+    info_cols = st.columns(4)
+    with info_cols[0]:
+        st.markdown(f"**Dimensiones:** {img.shape[1]} x {img.shape[2]} px")
+    with info_cols[1]:
+        st.markdown(f"**Total cortes:** {n_slices}")
+    with info_cols[2]:
+        st.markdown(f"**Corte actual:** {slice_ix + 1}")
+    with info_cols[3]:
+        st.markdown(f"**Min/Max:** {img[slice_ix].min():.1f} / {img[slice_ix].max():.1f}")
+        
+elif img is not None and output == 'Metadatos':
+    st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Metadatos DICOM</p>', unsafe_allow_html=True)
+    try:
+        metadata = dict()
+        for k in reader.GetMetaDataKeys(slice_ix):
+            metadata[k] = reader.GetMetaData(slice_ix, k)
+        df = pd.DataFrame.from_dict(metadata, orient='index', columns=['Valor'])
+        st.dataframe(df, height=600)
+    except Exception as e:
+        st.error(f"Error al leer metadatos: {str(e)}")
+else:
+    # Página de inicio cuando no hay imágenes cargadas
+    st.markdown('<p class="main-header">Brachyanalysis</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="text-align: center; padding: 40px; margin-top: 40px;">
+        <img src="https://raw.githubusercontent.com/SimpleITK/SimpleITK/master/Documentation/docs/images/simpleitk-logo.svg" alt="SimpleITK Logo" width="200">
+        <h2 style="color: #28aec5; margin-top: 20px;">Carga un archivo ZIP con tus imágenes DICOM</h2>
+        <p style="font-size: 18px; margin-top: 10px;">Utiliza el panel lateral para subir tus archivos y visualizarlos</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Pie de página
 st.markdown("""
