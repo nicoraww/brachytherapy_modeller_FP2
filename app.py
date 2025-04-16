@@ -11,8 +11,6 @@ import SimpleITK as sitk
 # Configuración de página y estilo
 st.set_page_config(layout="wide", page_title="Brachyanalysis")
 
-# Aumentar el límite de carga de archivos a 700MB
-st.server.set_max_upload_size(700)
 
 # CSS personalizado para aplicar los colores solicitados
 st.markdown("""
