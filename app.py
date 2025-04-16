@@ -2,14 +2,17 @@ import os
 import io
 import zipfile
 import tempfile
+import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 import SimpleITK as sitk
 
-
 # Configuración de página y estilo
 st.set_page_config(layout="wide", page_title="Brachyanalysis")
+
+# Aumentar el límite de carga de archivos a 700MB
+st.server.set_max_upload_size(700)
 
 # CSS personalizado para aplicar los colores solicitados
 st.markdown("""
@@ -99,6 +102,12 @@ st.markdown("""
         font-weight: bold;
         margin-bottom: 15px;
     }
+    .control-section {
+        background-color: rgba(40, 174, 197, 0.05);
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 15px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -131,11 +140,36 @@ def find_dicom_series(directory):
     
     return series_found
 
-def plot_slice(vol, slice_ix):
+def apply_window_level(image, window_width, window_center):
+    """Aplica ventana y nivel a la imagen (brillo y contraste)"""
+    # Convertir la imagen a float para evitar problemas con valores negativos
+    image_float = image.astype(float)
+    
+    # Calcular los límites de la ventana
+    min_value = window_center - window_width/2.0
+    max_value = window_center + window_width/2.0
+    
+    # Aplicar la ventana
+    image_windowed = np.clip(image_float, min_value, max_value)
+    
+    # Normalizar a [0, 1] para visualización
+    if max_value != min_value:
+        image_windowed = (image_windowed - min_value) / (max_value - min_value)
+    else:
+        image_windowed = np.zeros_like(image_float)
+    
+    return image_windowed
+
+def plot_slice(vol, slice_ix, window_width, window_center):
     fig, ax = plt.subplots(figsize=(12, 10))
     plt.axis('off')
     selected_slice = vol[slice_ix, :, :]
-    ax.imshow(selected_slice, origin='lower', cmap='gray')
+    
+    # Aplicar ajustes de ventana/nivel
+    windowed_slice = apply_window_level(selected_slice, window_width, window_center)
+    
+    # Mostrar la imagen con los ajustes aplicados
+    ax.imshow(windowed_slice, origin='lower', cmap='gray')
     return fig
 
 # Procesar archivos subidos
@@ -197,9 +231,78 @@ if dirname is not None:
             n_slices = img.shape[0]
             slice_ix = st.sidebar.slider('Seleccionar corte', 0, n_slices - 1, int(n_slices/2))
             output = st.sidebar.radio('Tipo de visualización', ['Imagen', 'Metadatos'], index=0)
+            
+            # Añadir controles de ventana (brillo y contraste) si la salida es Imagen
+            if output == 'Imagen':
+                st.sidebar.markdown('<div class="control-section">', unsafe_allow_html=True)
+                st.sidebar.markdown('<p class="sub-header">Ajustes de ventana</p>', unsafe_allow_html=True)
+                
+                # Calcular valores iniciales para la ventana
+                if img is not None:
+                    min_val = float(img.min())
+                    max_val = float(img.max())
+                    range_val = max_val - min_val
+                    
+                    # Establecer valores predeterminados para window width y center
+                    default_window_width = range_val
+                    default_window_center = min_val + (range_val / 2)
+                    
+                    # Crear controles deslizantes para window width y center
+                    window_width = st.sidebar.slider(
+                        "Contraste (Ancho de ventana)", 
+                        min_value=range_val/100,
+                        max_value=range_val*1.5,
+                        value=default_window_width,
+                        step=range_val/50
+                    )
+                    
+                    window_center = st.sidebar.slider(
+                        "Brillo (Centro de ventana)", 
+                        min_value=min_val,
+                        max_value=max_val,
+                        value=default_window_center,
+                        step=range_val/50
+                    )
+                    
+                    # Añadir botón para restablecer valores
+                    if st.sidebar.button("Restablecer ventana"):
+                        window_width = default_window_width
+                        window_center = default_window_center
+                st.sidebar.markdown('</div>', unsafe_allow_html=True)
+                
+                # Añadir presets de ventana para radiología
+                st.sidebar.markdown('<div class="control-section">', unsafe_allow_html=True)
+                st.sidebar.markdown('<p class="sub-header">Presets de ventana</p>', unsafe_allow_html=True)
+                preset_options = {
+                    "Personalizado": (window_width, window_center),
+                    "Abdomen": (400, 50),
+                    "Pulmón": (1500, -600),
+                    "Cerebro": (80, 40),
+                    "Hueso": (2000, 350),
+                    "Tejido blando": (250, 50)
+                }
+                
+                selected_preset = st.sidebar.selectbox(
+                    "Presets radiológicos",
+                    list(preset_options.keys())
+                )
+                
+                # Actualizar valores si se selecciona un preset diferente de "Personalizado"
+                if selected_preset != "Personalizado":
+                    window_width, window_center = preset_options[selected_preset]
+                st.sidebar.markdown('</div>', unsafe_allow_html=True)
+                
+            else:
+                # Valores predeterminados para cuando no son necesarios
+                window_width = max_val - min_val if 'max_val' in locals() else 1000
+                window_center = (max_val + min_val) / 2 if 'max_val' in locals() else 0
+                
         except Exception as e:
             st.sidebar.error(f"Error al procesar los archivos DICOM: {str(e)}")
             st.sidebar.write("Detalles del error:", str(e))
+            # Valores predeterminados
+            window_width = 1000
+            window_center = 0
 
 # Visualización en la ventana principal
 # Título grande siempre visible
@@ -208,12 +311,12 @@ st.markdown('<p class="giant-title">Brachyanalysis</p>', unsafe_allow_html=True)
 if img is not None and output == 'Imagen':
     st.markdown('<p class="sub-header">Visualización DICOM</p>', unsafe_allow_html=True)
     
-    # Muestra la imagen en la ventana principal
-    fig = plot_slice(img, slice_ix)
+    # Muestra la imagen en la ventana principal con los ajustes aplicados
+    fig = plot_slice(img, slice_ix, window_width, window_center)
     st.pyplot(fig)
     
-    # Información adicional sobre la imagen
-    info_cols = st.columns(4)
+    # Información adicional sobre la imagen y los ajustes actuales
+    info_cols = st.columns(6)
     with info_cols[0]:
         st.markdown(f"**Dimensiones:** {img.shape[1]} x {img.shape[2]} px")
     with info_cols[1]:
@@ -222,6 +325,10 @@ if img is not None and output == 'Imagen':
         st.markdown(f"**Corte actual:** {slice_ix + 1}")
     with info_cols[3]:
         st.markdown(f"**Min/Max:** {img[slice_ix].min():.1f} / {img[slice_ix].max():.1f}")
+    with info_cols[4]:
+        st.markdown(f"**Contraste:** {window_width:.1f}")
+    with info_cols[5]:
+        st.markdown(f"**Brillo:** {window_center:.1f}")
         
 elif img is not None and output == 'Metadatos':
     st.markdown('<p class="sub-header">Metadatos DICOM</p>', unsafe_allow_html=True)
@@ -242,6 +349,7 @@ else:
         <img src="https://raw.githubusercontent.com/SimpleITK/SimpleITK/master/Documentation/docs/images/simpleitk-logo.svg" alt="SimpleITK Logo" width="200">
         <h2 style="color: #28aec5; margin-top: 20px;">Carga un archivo ZIP con tus imágenes DICOM</h2>
         <p style="font-size: 18px; margin-top: 10px;">Utiliza el panel lateral para subir tus archivos y visualizarlos</p>
+        <p style="font-size: 16px; margin-top: 10px;">El tamaño máximo de archivo es de 700MB</p>
     </div>
     """, unsafe_allow_html=True)
 
