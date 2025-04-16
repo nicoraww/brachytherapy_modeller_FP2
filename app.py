@@ -122,7 +122,6 @@ st.sidebar.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>',
 st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
 
 # Solo opción de subir ZIP
-st.sidebar.markdown("Nota: Para subir archivos mayores a 200MB, configura el límite en el archivo `.streamlit/config.toml`")
 uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
 # Función para buscar recursivamente archivos DICOM en un directorio
