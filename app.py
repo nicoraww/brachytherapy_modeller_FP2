@@ -6,6 +6,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 import SimpleITK as sitk
+import streamlit as st
+
+# Configurar el tamaño máximo de carga
+st.server.set_max_upload_size(700)
 
 # Configuración de página y estilo
 st.set_page_config(layout="wide", page_title="Brachyanalysis")
