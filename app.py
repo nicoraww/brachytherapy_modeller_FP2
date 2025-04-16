@@ -11,7 +11,6 @@ import SimpleITK as sitk
 # Configuración de página y estilo
 st.set_page_config(layout="wide", page_title="Brachyanalysis")
 
-
 # CSS personalizado para aplicar los colores solicitados
 st.markdown("""
 <style>
@@ -106,6 +105,12 @@ st.markdown("""
         border-radius: 8px;
         margin-top: 15px;
     }
+    .input-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -117,6 +122,7 @@ st.sidebar.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>',
 st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
 
 # Solo opción de subir ZIP
+st.sidebar.markdown("Nota: Para subir archivos mayores a 200MB, configura el límite en el archivo `.streamlit/config.toml`")
 uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
 # Función para buscar recursivamente archivos DICOM en un directorio
@@ -196,6 +202,20 @@ n_slices = 0
 slice_ix = 0
 reader = None
 
+# Define los presets de ventana basados en RadiAnt
+radiant_presets = {
+    "Default window": (0, 0),  # Auto-calculado según la imagen
+    "Full dynamic": (0, 0),    # Auto-calculado según la imagen
+    "CT Abdomen": (350, 50),
+    "CT Angio": (600, 300),
+    "CT Bone": (2000, 350),
+    "CT Brain": (80, 40),
+    "CT Chest": (350, 40),
+    "CT Lungs": (1500, -600),
+    "Negative": (0, 0),       # Invertir la imagen
+    "Custom window": (0, 0)   # Valores personalizados
+}
+
 if dirname is not None:
     # Usar un spinner en el área principal en lugar de en la barra lateral
     with st.spinner('Buscando series DICOM...'):
@@ -232,9 +252,6 @@ if dirname is not None:
             
             # Añadir controles de ventana (brillo y contraste) si la salida es Imagen
             if output == 'Imagen':
-                st.sidebar.markdown('<div class="control-section">', unsafe_allow_html=True)
-                st.sidebar.markdown('<p class="sub-header">Ajustes de ventana</p>', unsafe_allow_html=True)
-                
                 # Calcular valores iniciales para la ventana
                 if img is not None:
                     min_val = float(img.min())
@@ -245,55 +262,65 @@ if dirname is not None:
                     default_window_width = range_val
                     default_window_center = min_val + (range_val / 2)
                     
-                    # Crear controles deslizantes para window width y center
-                    window_width = st.sidebar.slider(
-                        "Contraste (Ancho de ventana)", 
-                        min_value=range_val/100,
-                        max_value=range_val*1.5,
-                        value=default_window_width,
-                        step=range_val/50
+                    # Añadir presets de ventana para radiología
+                    st.sidebar.markdown('<div class="control-section">', unsafe_allow_html=True)
+                    st.sidebar.markdown('<p class="sub-header">Presets de ventana</p>', unsafe_allow_html=True)
+                    
+                    # Actualizar los presets automáticos
+                    radiant_presets["Default window"] = (default_window_width, default_window_center)
+                    radiant_presets["Full dynamic"] = (range_val, min_val + (range_val / 2))
+                    
+                    selected_preset = st.sidebar.selectbox(
+                        "Presets radiológicos",
+                        list(radiant_presets.keys())
                     )
                     
-                    window_center = st.sidebar.slider(
-                        "Brillo (Centro de ventana)", 
-                        min_value=min_val,
-                        max_value=max_val,
-                        value=default_window_center,
-                        step=range_val/50
-                    )
+                    # Inicializar valores de ventana basados en el preset
+                    window_width, window_center = radiant_presets[selected_preset]
                     
-                    # Añadir botón para restablecer valores
-                    if st.sidebar.button("Restablecer ventana"):
+                    # Si es preset negativo, invertir la imagen
+                    is_negative = selected_preset == "Negative"
+                    if is_negative:
                         window_width = default_window_width
                         window_center = default_window_center
-                st.sidebar.markdown('</div>', unsafe_allow_html=True)
-                
-                # Añadir presets de ventana para radiología
-                st.sidebar.markdown('<div class="control-section">', unsafe_allow_html=True)
-                st.sidebar.markdown('<p class="sub-header">Presets de ventana</p>', unsafe_allow_html=True)
-                preset_options = {
-                    "Personalizado": (window_width, window_center),
-                    "Abdomen": (400, 50),
-                    "Pulmón": (1500, -600),
-                    "Cerebro": (80, 40),
-                    "Hueso": (2000, 350),
-                    "Tejido blando": (250, 50)
-                }
-                
-                selected_preset = st.sidebar.selectbox(
-                    "Presets radiológicos",
-                    list(preset_options.keys())
-                )
-                
-                # Actualizar valores si se selecciona un preset diferente de "Personalizado"
-                if selected_preset != "Personalizado":
-                    window_width, window_center = preset_options[selected_preset]
-                st.sidebar.markdown('</div>', unsafe_allow_html=True)
+                    
+                    # Si es un preset personalizado o Custom window, mostrar los campos de entrada
+                    if selected_preset == "Custom window":
+                        st.sidebar.markdown('<p class="sub-header">Ajustes personalizados</p>', unsafe_allow_html=True)
+                        
+                        # Mostrar información sobre el rango
+                        st.sidebar.markdown(f"**Rango de valores de la imagen:** {min_val:.1f} a {max_val:.1f}")
+                        
+                        # Crear dos columnas para los campos de entrada
+                        col1, col2 = st.sidebar.columns(2)
+                        
+                        with col1:
+                            window_width = float(st.number_input(
+                                "Ancho de ventana (WW)",
+                                min_value=1.0,
+                                max_value=range_val * 2,
+                                value=float(default_window_width),
+                                format="%.1f",
+                                help="Controla el contraste. Valores menores aumentan el contraste."
+                            ))
+                        
+                        with col2:
+                            window_center = float(st.number_input(
+                                "Centro de ventana (WL)",
+                                min_value=min_val - range_val,
+                                max_value=max_val + range_val,
+                                value=float(default_window_center),
+                                format="%.1f",
+                                help="Controla el brillo. Valores mayores aumentan el brillo."
+                            ))
+                    
+                    st.sidebar.markdown('</div>', unsafe_allow_html=True)
                 
             else:
                 # Valores predeterminados para cuando no son necesarios
                 window_width = max_val - min_val if 'max_val' in locals() else 1000
                 window_center = (max_val + min_val) / 2 if 'max_val' in locals() else 0
+                is_negative = False
                 
         except Exception as e:
             st.sidebar.error(f"Error al procesar los archivos DICOM: {str(e)}")
@@ -301,6 +328,7 @@ if dirname is not None:
             # Valores predeterminados
             window_width = 1000
             window_center = 0
+            is_negative = False
 
 # Visualización en la ventana principal
 # Título grande siempre visible
@@ -309,9 +337,23 @@ st.markdown('<p class="giant-title">Brachyanalysis</p>', unsafe_allow_html=True)
 if img is not None and output == 'Imagen':
     st.markdown('<p class="sub-header">Visualización DICOM</p>', unsafe_allow_html=True)
     
-    # Muestra la imagen en la ventana principal con los ajustes aplicados
-    fig = plot_slice(img, slice_ix, window_width, window_center)
-    st.pyplot(fig)
+    # Si es modo negativo, invertir la imagen
+    if is_negative:
+        # Muestra la imagen invertida
+        fig, ax = plt.subplots(figsize=(12, 10))
+        plt.axis('off')
+        selected_slice = img[slice_ix, :, :]
+        
+        # Aplicar ventana y luego invertir
+        windowed_slice = apply_window_level(selected_slice, window_width, window_center)
+        windowed_slice = 1.0 - windowed_slice  # Invertir
+        
+        ax.imshow(windowed_slice, origin='lower', cmap='gray')
+        st.pyplot(fig)
+    else:
+        # Muestra la imagen en la ventana principal con los ajustes aplicados
+        fig = plot_slice(img, slice_ix, window_width, window_center)
+        st.pyplot(fig)
     
     # Información adicional sobre la imagen y los ajustes actuales
     info_cols = st.columns(6)
@@ -324,9 +366,9 @@ if img is not None and output == 'Imagen':
     with info_cols[3]:
         st.markdown(f"**Min/Max:** {img[slice_ix].min():.1f} / {img[slice_ix].max():.1f}")
     with info_cols[4]:
-        st.markdown(f"**Contraste:** {window_width:.1f}")
+        st.markdown(f"**Ancho (WW):** {window_width:.1f}")
     with info_cols[5]:
-        st.markdown(f"**Brillo:** {window_center:.1f}")
+        st.markdown(f"**Centro (WL):** {window_center:.1f}")
         
 elif img is not None and output == 'Metadatos':
     st.markdown('<p class="sub-header">Metadatos DICOM</p>', unsafe_allow_html=True)
@@ -347,7 +389,6 @@ else:
         <img src="https://raw.githubusercontent.com/SimpleITK/SimpleITK/master/Documentation/docs/images/simpleitk-logo.svg" alt="SimpleITK Logo" width="200">
         <h2 style="color: #28aec5; margin-top: 20px;">Carga un archivo ZIP con tus imágenes DICOM</h2>
         <p style="font-size: 18px; margin-top: 10px;">Utiliza el panel lateral para subir tus archivos y visualizarlos</p>
-        <p style="font-size: 16px; margin-top: 10px;">El tamaño máximo de archivo es de 700MB</p>
     </div>
     """, unsafe_allow_html=True)
 
