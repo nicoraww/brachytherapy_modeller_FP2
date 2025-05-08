@@ -42,9 +42,10 @@ st.markdown("""
 st.sidebar.markdown('<p class="sidebar-title">Brachyanalysis</p>', unsafe_allow_html=True)
 st.sidebar.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
 st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
+
+# Carga de archivo ZIP
 uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
-# Funciones de procesamiento
 def find_dicom_series(directory):
     series_found = []
     for root, dirs, files in os.walk(directory):
@@ -58,12 +59,15 @@ def find_dicom_series(directory):
             continue
     return series_found
 
+
 def apply_window_level(image, window_width, window_center):
     img_float = image.astype(float)
     min_v = window_center - window_width/2.0
     max_v = window_center + window_width/2.0
-    win = np.clip(img_float, min_v, max_v)
-    return (win - min_v)/(max_v - min_v) if max_v!=min_v else np.zeros_like(img_float)
+    windowed = np.clip(img_float, min_v, max_v)
+    if max_v != min_v:
+        return (windowed - min_v) / (max_v - min_v)
+    return np.zeros_like(img_float)
 
 # Variables iniciales
 dirname = None
@@ -74,52 +78,64 @@ if uploaded_file:
     dirname = temp_dir
     st.sidebar.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
 
-# Leer DICOM
-dicom_series, img, reader = None, None, None
+# Leer y procesar DICOM
+dicom_series = None
+img = None
 if dirname:
     with st.spinner('Buscando series DICOM...'):
         dicom_series = find_dicom_series(dirname)
     if dicom_series:
-        options = [f"Serie {i+1}: {sid[:10]}... ({len(files)} archivos)" for i,(sid,_,files) in enumerate(dicom_series)]
-        idx = st.sidebar.selectbox("Seleccionar serie DICOM:", options, index=0)
-        sid, dirpath, files = dicom_series[idx]
+        # Mostrar opciones de series disponibles
+        options = [f"Serie {i+1}: {sid[:10]}... ({len(files)} archivos)" for i, (sid, _, files) in enumerate(dicom_series)]
+        selection = st.sidebar.selectbox("Seleccionar serie DICOM:", options)
+        selected_idx = options.index(selection)
+        sid, dirpath, files = dicom_series[selected_idx]
         reader = sitk.ImageSeriesReader()
         reader.SetFileNames(files)
         data = reader.Execute()
         img = sitk.GetArrayViewFromImage(data)
     else:
-        st.sidebar.error("No se encontraron DICOM válidos.")
+        st.sidebar.error("No se encontraron DICOM válidos en el ZIP cargado.")
 
-# Controles de ventana y vista
+# Controles y visualización
 if img is not None:
     n_ax, n_cor, n_sag = img.shape
-    # Selección de vista 2D
+    st.sidebar.subheader("Opciones de visualización 2D")
     view2d = st.sidebar.selectbox("Vista 2D", ["Axial", "Coronal", "Sagital"])
     max_idx = {'Axial': n_ax-1, 'Coronal': n_cor-1, 'Sagital': n_sag-1}[view2d]
     slice_ix = st.sidebar.slider('Corte', 0, max_idx, max_idx//2)
-    # Presets
-    min_v, max_v = float(img.min()), float(img.max())
-    dvw, dvc = max_v-min_v, min_v+(max_v-min_v)/2
-    presets = {"Default":(dvw,dvc),"CT Abdomen":(350,50),"CT Bone":(2000,350),"Custom":None}
-    choice = st.sidebar.selectbox("Presets ventana", list(presets.keys()))
-    if choice!="Custom": ww, wc = presets[choice]
+
+    # Presets de ventana
+    min_val, max_val = float(img.min()), float(img.max())
+    default_ww = max_val - min_val
+    default_wc = min_val + default_ww/2
+    presets = {"Default": (default_ww, default_wc), "CT Abdomen": (350, 50), "CT Bone": (2000, 350), "Custom": None}
+    preset_choice = st.sidebar.selectbox("Presets ventana", list(presets.keys()))
+    if preset_choice != "Custom":
+        ww, wc = presets[preset_choice]
     else:
-        ww = st.sidebar.number_input("WW", 1.0, max_v-min_v*2, float(dvw))
-        wc = st.sidebar.number_input("WL", min_v-(max_v-min_v), max_v+(max_v-min_v), float(dvc))
-    # Función renderizado 2D
+        ww = st.sidebar.number_input("Ancho de ventana (WW)", 1.0, default_ww*2, default_ww)
+        wc = st.sidebar.number_input("Centro ventana (WL)", min_val-default_ww, max_val+default_ww, default_wc)
+
+    # Función para render 2D
     def render2d(slice2d):
-        fig, ax = plt.subplots(figsize=(8,6)); ax.axis('off')
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.axis('off')
         ax.imshow(apply_window_level(slice2d, ww, wc), cmap='gray', origin='lower')
         return fig
-    # Mostrar según vista
-    if view2d=="Axial": fig = render2d(img[slice_ix,:,:])
-    elif view2d=="Coronal": fig = render2d(img[:,slice_ix,:])
-    else: fig = render2d(img[:,:,slice_ix])
-    st.pyplot(fig)
+
+    # Mostrar la vista 2D
+    if view2d == "Axial":
+        fig2d = render2d(img[slice_ix, :, :])
+    elif view2d == "Coronal":
+        fig2d = render2d(img[:, slice_ix, :])
+    else:
+        fig2d = render2d(img[:, :, slice_ix])
+    st.pyplot(fig2d)
 
     # Vista 3D interactiva
     if st.sidebar.checkbox("Mostrar vista 3D interactiva"):
-        x, y, z = np.mgrid[0:n_ax,0:n_cor,0:n_sag]
+        x, y, z = np.mgrid[0:n_ax, 0:n_cor, 0:n_sag]
         fig3d = go.Figure(data=go.Volume(
             x=x.flatten(), y=y.flatten(), z=z.flatten(),
             value=img.flatten(), opacity=0.05, surface_count=20
