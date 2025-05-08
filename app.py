@@ -125,4 +125,4 @@ if img is not None:
         Brachyanalysis - 2D Quadrants Viewer
     </div>
     """, unsafe_allow_html=True)
-```
+
