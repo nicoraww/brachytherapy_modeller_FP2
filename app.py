@@ -5,10 +5,13 @@ import tempfile
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import streamlit as st
 import SimpleITK as sitk
+from skimage.transform import resize  # Asegúrate de que scikit-image esté instalado
+
+# Para vista 3D interactiva
 import plotly.graph_objects as go
-from skimage.transform import resize
 
 # Configuración de página y estilo
 st.set_page_config(layout="wide", page_title="Brachyanalysis")
@@ -24,22 +27,12 @@ st.markdown("""
     .info-box { background-color: rgba(40, 174, 197, 0.1); border-left: 3px solid #28aec5; padding: 10px; margin: 10px 0; }
     .success-box { background-color: rgba(192, 215, 17, 0.1); border-left: 3px solid #c0d711; padding: 10px; margin: 10px 0; }
     .plot-container { border: 2px solid #c0d711; border-radius: 5px; padding: 10px; margin-top: 20px; }
-    div[data-baseweb="select"] { border-radius: 4px; border-color: #28aec5; }
-    div[data-baseweb="slider"] > div { background-color: #c0d711 !important; }
-    div.stRadio > div[role="radiogroup"] > label { background-color: rgba(40, 174, 197, 0.1); margin-right: 10px; padding: 5px 15px; border-radius: 4px; }
-    div.stRadio > div[role="radiogroup"] > label[data-baseweb="radio"] > div:first-child { background-color: #28aec5; }
-    .upload-section { background-color: rgba(40, 174, 197, 0.05); padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-    .stUploadButton>button { background-color: #c0d711; color: #1e1e1e; font-weight: bold; }
-    .sidebar-title { color: #28aec5; font-size: 28px; font-weight: bold; margin-bottom: 15px; }
-    .control-section { background-color: rgba(40, 174, 197, 0.05); padding: 15px; border-radius: 8px; margin-top: 15px; }
-    .input-row { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
 # Barra lateral
 st.sidebar.markdown('<p class="sidebar-title">Brachyanalysis</p>', unsafe_allow_html=True)
 st.sidebar.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
-st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_html=True)
 
 # Carga de archivo ZIP
 uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
@@ -47,7 +40,7 @@ uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos D
 # Función para buscar series DICOM
 def find_dicom_series(directory):
     series_found = []
-    for root, _, _ in os.walk(directory):
+    for root, dirs, files in os.walk(directory):
         try:
             series_ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(root)
             for sid in series_ids:
@@ -80,6 +73,7 @@ if uploaded_file:
 # Lectura y selección de la serie DICOM
 dicom_series = None
 img = None
+original_image = None
 if dirname:
     with st.spinner('Buscando series DICOM...'):
         dicom_series = find_dicom_series(dirname)
@@ -92,7 +86,8 @@ if dirname:
         reader = sitk.ImageSeriesReader()
         reader.SetFileNames(files)
         data = reader.Execute()
-        img = sitk.GetArrayViewFromImage(data)
+        img = sitk.GetArrayViewFromImage(data)  # NumPy array (Z, Y, X)
+        original_image = img  # Guardamos para visualización 3D
     else:
         st.sidebar.error("No se encontraron DICOM válidos en el ZIP cargado.")
 
@@ -104,6 +99,7 @@ if img is not None:
     max_idx = {'Axial': n_ax-1, 'Coronal': n_cor-1, 'Sagital': n_sag-1}[view2d]
     slice_ix = st.sidebar.slider('Corte', 0, max_idx, max_idx//2)
 
+    # Presets de ventana
     min_val, max_val = float(img.min()), float(img.max())
     default_ww = max_val - min_val
     default_wc = min_val + default_ww/2
@@ -129,35 +125,25 @@ if img is not None:
         fig2d = render2d(img[:, :, slice_ix])
     st.pyplot(fig2d)
 
-    # Mostrar vista 3D interactiva
+    # Vista 3D interactiva
     if st.sidebar.checkbox("Mostrar vista 3D interactiva"):
-        with st.spinner("Generando visualización 3D..."):
-            downscale_factor = 0.25
-            downsampled_img = resize(img, 
-                                     output_shape=(int(n_ax * downscale_factor),
-                                                   int(n_cor * downscale_factor),
-                                                   int(n_sag * downscale_factor)),
-                                     anti_aliasing=True)
+        st.sidebar.info("Reducción de resolución para mejorar el rendimiento")
 
-            x, y, z = np.mgrid[0:downsampled_img.shape[0],
-                               0:downsampled_img.shape[1],
-                               0:downsampled_img.shape[2]]
+        # Reducimos resolución para performance
+        target_shape = (64, 64, 64)
+        img_resized = resize(original_image, target_shape, anti_aliasing=True)
 
-            fig3d = go.Figure(data=go.Volume(
-                x=x.flatten(),
-                y=y.flatten(),
-                z=z.flatten(),
-                value=downsampled_img.flatten(),
-                opacity=50,
-                surface_count=0.08,
-                colorscale="Gray"
-            ))
-            fig3d.update_layout(scene=dict(
-                xaxis_title='Axial',
-                yaxis_title='Coronal',
-                zaxis_title='Sagital'
-            ), margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig3d, use_container_width=True)
+        # Crear grid de coordenadas
+        x, y, z = np.mgrid[0:target_shape[0], 0:target_shape[1], 0:target_shape[2]]
+        fig3d = go.Figure(data=go.Volume(
+            x=x.flatten(), y=y.flatten(), z=z.flatten(),
+            value=img_resized.flatten(),
+            opacity=0.1,
+            surface_count=15,
+            colorscale="Gray",
+        ))
+        fig3d.update_layout(margin=dict(l=0, r=0, b=0, t=0))
+        st.plotly_chart(fig3d, use_container_width=True)
 
 # Encabezado y pie de página
 st.markdown('<p class="giant-title">Brachyanalysis</p>', unsafe_allow_html=True)
