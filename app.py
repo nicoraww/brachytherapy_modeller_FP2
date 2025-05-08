@@ -44,7 +44,6 @@ st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_htm
 uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
 # Función para buscar series DICOM
-
 def find_dicom_series(directory):
     series = []
     for root, dirs, files in os.walk(directory):
@@ -69,7 +68,6 @@ def apply_window_level(image, window_width, window_center):
     return np.zeros_like(imgf)
 
 # Función para renderizar una imagen 2D
-
 def render2d(slice2d, ww, wc):
     fig, ax = plt.subplots(figsize=(5, 5))
     ax.axis('off')
@@ -92,8 +90,7 @@ if dirname:
     with st.spinner('Buscando series DICOM...'):
         dicom_series = find_dicom_series(dirname)
     if dicom_series:
-        options = [f"Serie {i+1}: {sid[:10]}... ({len(flist)} archivos)"
-                   for i, (sid, flist) in enumerate(dicom_series)]
+        options = [f"Serie {i+1}: {sid[:10]}... ({len(flist)} archivos)" for i, (sid, flist) in enumerate(dicom_series)]
         choice = st.sidebar.selectbox("Seleccionar serie DICOM:", options)
         idx = options.index(choice)
         sid, flist = dicom_series[idx]
@@ -126,7 +123,8 @@ if img is not None:
         ww = st.sidebar.number_input("Ancho de ventana (WW)", 1.0, mx - mn if mx > mn else 1.0, default_ww)
         wc = st.sidebar.number_input("Centro ventana (WL)", mn - default_ww, mx + default_ww, default_wc)
 
-    # Checkbox para vista 3D\    show_3d = st.sidebar.checkbox("Mostrar vista 3D interactiva")
+    # Checkbox para vista 3D
+    show_3d = st.sidebar.checkbox("Mostrar vista 3D interactiva")
 
     # Construir grid 2x2
     row1_col1, row1_col2 = st.columns(2)
