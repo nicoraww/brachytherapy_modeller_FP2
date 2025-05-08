@@ -5,95 +5,151 @@ import tempfile
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import streamlit as st
 import SimpleITK as sitk
+from skimage.transform import resize  # Asegúrate de que scikit-image esté instalado
 
-# Configuración de página
+# Para vista 3D interactiva
+import plotly.graph_objects as go
+
+# Configuración de página y estilo
 st.set_page_config(layout="wide", page_title="Brachyanalysis")
 
-# Título principal
-st.title("Brachyanalysis")
+# CSS personalizado
+st.markdown("""
+<style>
+    .main-header { color: #28aec5; text-align: center; font-size: 42px; margin-bottom: 20px; font-weight: bold; }
+    .giant-title { color: #28aec5; text-align: center; font-size: 72px; margin: 30px 0; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; text-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
+    .sub-header { color: #c0d711; font-size: 24px; margin-bottom: 15px; font-weight: bold; }
+    .stButton>button { background-color: #28aec5; color: white; border: none; border-radius: 4px; padding: 8px 16px; }
+    .stButton>button:hover { background-color: #1c94aa; }
+    .info-box { background-color: rgba(40, 174, 197, 0.1); border-left: 3px solid #28aec5; padding: 10px; margin: 10px 0; }
+    .success-box { background-color: rgba(192, 215, 17, 0.1); border-left: 3px solid #c0d711; padding: 10px; margin: 10px 0; }
+    .plot-container { border: 2px solid #c0d711; border-radius: 5px; padding: 10px; margin-top: 20px; }
+</style>
+""", unsafe_allow_html=True)
 
-# Carga de archivo ZIP con DICOM en la barra lateral
-uploaded = st.sidebar.file_uploader("Carga ZIP con tus archivos DICOM", type="zip")
+# Barra lateral
+st.sidebar.markdown('<p class="sidebar-title">Brachyanalysis</p>', unsafe_allow_html=True)
+st.sidebar.markdown('<p class="sub-header">Visualizador de imágenes DICOM</p>', unsafe_allow_html=True)
 
-# Función para encontrar y leer la primera serie DICOM
-@st.cache_data
-def load_first_series_from_zip(uploaded_zip):
-    tmpdir = tempfile.mkdtemp()
-    with zipfile.ZipFile(io.BytesIO(uploaded_zip.read()), 'r') as zf:
-        zf.extractall(tmpdir)
-    # Buscar series
-    series = []
-    for root, _, _ in os.walk(tmpdir):
-        ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(root)
-        if ids:
-            # Tomar la primera serie encontrada
-            files = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(root, ids[0])
-            if files:
-                series.append(files)
-    if not series:
-        return None
-    files = series[0]
-    reader = sitk.ImageSeriesReader()
-    reader.SetFileNames(files)
-    image3d = reader.Execute()
-    return sitk.GetArrayViewFromImage(image3d)  # Devuelve array Z,Y,X
+# Carga de archivo ZIP
+uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
+# Función para buscar series DICOM
+def find_dicom_series(directory):
+    series_found = []
+    for root, dirs, files in os.walk(directory):
+        try:
+            series_ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(root)
+            for sid in series_ids:
+                file_list = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(root, sid)
+                if file_list:
+                    series_found.append((sid, root, file_list))
+        except Exception:
+            continue
+    return series_found
+
+# Función para aplicar ventana/nivel
+def apply_window_level(image, window_width, window_center):
+    img_float = image.astype(float)
+    min_v = window_center - window_width/2.0
+    max_v = window_center + window_width/2.0
+    windowed = np.clip(img_float, min_v, max_v)
+    if max_v != min_v:
+        return (windowed - min_v) / (max_v - min_v)
+    return np.zeros_like(img_float)
+
+# Procesamiento inicial
+dirname = None
+if uploaded_file:
+    temp_dir = tempfile.mkdtemp()
+    with zipfile.ZipFile(io.BytesIO(uploaded_file.read()), 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
+    dirname = temp_dir
+    st.sidebar.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
+
+# Lectura y selección de la serie DICOM
+dicom_series = None
 img = None
-if uploaded:
-    with st.spinner('Extrayendo y cargando DICOM...'):
-        img = load_first_series_from_zip(uploaded)
-    if img is None:
-        st.sidebar.error("No se encontró ninguna serie DICOM válida en el ZIP.")
+original_image = None
+if dirname:
+    with st.spinner('Buscando series DICOM...'):
+        dicom_series = find_dicom_series(dirname)
+    if dicom_series:
+        options = [f"Serie {i+1}: {series[0][:10]}... ({len(series[2])} archivos)" \
+                   for i, series in enumerate(dicom_series)]
+        selection = st.sidebar.selectbox("Seleccionar serie DICOM:", options)
+        selected_idx = options.index(selection)
+        sid, dirpath, files = dicom_series[selected_idx]
+        reader = sitk.ImageSeriesReader()
+        reader.SetFileNames(files)
+        data = reader.Execute()
+        img = sitk.GetArrayViewFromImage(data)  # NumPy array (Z, Y, X)
+        original_image = img  # Guardamos para visualización 3D
+    else:
+        st.sidebar.error("No se encontraron DICOM válidos en el ZIP cargado.")
 
-# Mostrar cuadrícula de tres vistas si exist
+# Visualización 2D
 if img is not None:
-    # Dimensiones
-    nz, ny, nx = img.shape
-    # Sliders de cortes
-    st.sidebar.subheader("Cortes")
-    z_ix = st.sidebar.slider("Axial", 0, nz-1, nz//2)
-    y_ix = st.sidebar.slider("Coronal", 0, ny-1, ny//2)
-    x_ix = st.sidebar.slider("Sagital", 0, nx-1, nx//2)
+    n_ax, n_cor, n_sag = img.shape
+    st.sidebar.subheader("Opciones de visualización 2D")
+    view2d = st.sidebar.selectbox("Vista 2D", ["Axial", "Coronal", "Sagital"])
+    max_idx = {'Axial': n_ax-1, 'Coronal': n_cor-1, 'Sagital': n_sag-1}[view2d]
+    slice_ix = st.sidebar.slider('Corte', 0, max_idx, max_idx//2)
 
-    # Ventana y nivel
-    st.sidebar.subheader("Ventana y Nivel (WW/WL)")
-    mn, mx = float(img.min()), float(img.max())
-    default_ww = mx - mn
-    default_wl = (mx + mn)/2
-    ww = st.sidebar.number_input("WW", min_value=1.0, value=default_ww)
-    wl = st.sidebar.number_input("WL", value=default_wl)
+    # Presets de ventana
+    min_val, max_val = float(img.min()), float(img.max())
+    default_ww = max_val - min_val
+    default_wc = min_val + default_ww/2
+    presets = {"Default": (default_ww, default_wc), "CT Abdomen": (350, 50), "CT Bone": (2000, 350), "Custom": None}
+    preset_choice = st.sidebar.selectbox("Presets ventana", list(presets.keys()))
+    if preset_choice != "Custom":
+        ww, wc = presets[preset_choice]
+    else:
+        ww = st.sidebar.number_input("Ancho de ventana (WW)", 1.0, default_ww*2, default_ww)
+        wc = st.sidebar.number_input("Centro ventana (WL)", min_val-default_ww, max_val+default_ww, default_wc)
 
-    # Función de ventana
-    def window_img(slice2d):
-        arr = slice2d.astype(float)
-        mnv = wl - ww/2
-        mxv = wl + ww/2
-        clipped = np.clip(arr, mnv, mxv)
-        return (clipped - mnv)/(mxv - mnv) if mxv!=mnv else np.zeros_like(arr)
-
-    # Crear cuadrícula 1x3
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.subheader("Axial")
-        fig, ax = plt.subplots(figsize=(4,4))
-        ax.imshow(window_img(img[z_ix,:,:]), cmap='gray')
+    def render2d(slice2d):
+        fig, ax = plt.subplots(figsize=(8, 6))
         ax.axis('off')
-        st.pyplot(fig)
-    with col2:
-        st.subheader("Coronal")
-        fig, ax = plt.subplots(figsize=(4,4))
-        ax.imshow(window_img(img[:,y_ix,:]), cmap='gray')
-        ax.axis('off')
-        st.pyplot(fig)
-    with col3:
-        st.subheader("Sagital")
-        fig, ax = plt.subplots(figsize=(4,4))
-        ax.imshow(window_img(img[:,:,x_ix]), cmap='gray')
-        ax.axis('off')
-        st.pyplot(fig)
+        ax.imshow(apply_window_level(slice2d, ww, wc), cmap='gray', origin='lower')
+        return fig
 
-    # Pie de página
-    st.markdown("---")
-    st.markdown('<div style="text-align:center;color:#28aec5;font-size:14px;">Brachyanalysis - Quadrants Viewer</div>', unsafe_allow_html=True)
+    if view2d == "Axial":
+        fig2d = render2d(img[slice_ix, :, :])
+    elif view2d == "Coronal":
+        fig2d = render2d(img[:, slice_ix, :])
+    else:
+        fig2d = render2d(img[:, :, slice_ix])
+    st.pyplot(fig2d)
+
+    # Vista 3D interactiva
+    if st.sidebar.checkbox("Mostrar vista 3D interactiva"):
+        st.sidebar.info("Reducción de resolución para mejorar el rendimiento")
+
+        # Reducimos resolución para performance
+        target_shape = (64, 64, 64)
+        img_resized = resize(original_image, target_shape, anti_aliasing=True)
+
+        # Crear grid de coordenadas
+        x, y, z = np.mgrid[0:target_shape[0], 0:target_shape[1], 0:target_shape[2]]
+        fig3d = go.Figure(data=go.Volume(
+            x=x.flatten(), y=y.flatten(), z=z.flatten(),
+            value=img_resized.flatten(),
+            opacity=0.1,
+            surface_count=15,
+            colorscale="Gray",
+        ))
+        fig3d.update_layout(margin=dict(l=0, r=0, b=0, t=0))
+        st.plotly_chart(fig3d, use_container_width=True)
+
+# Encabezado y pie de página
+st.markdown('<p class="giant-title">Brachyanalysis</p>', unsafe_allow_html=True)
+st.markdown("""
+<hr>
+<div style="text-align:center;color:#28aec5;font-size:14px;">
+    Brachyanalysis - Visualizador de imágenes DICOM
+</div>
+""", unsafe_allow_html=True)
