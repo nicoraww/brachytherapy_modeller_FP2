@@ -148,7 +148,7 @@ if img is not None:
                 y=y.flatten(),
                 z=z.flatten(),
                 value=downsampled_img.flatten(),
-                opacity=0.08,
+                opacity=0.10,
                 surface_count=20,
                 colorscale="Gray"
             ))
