@@ -406,3 +406,44 @@ if temp_dir and os.path.exists(temp_dir):
     # ya que las sesiones persisten. Una solución es mantener un registro
     # de directorios temporales y limpiarlos al inicio.
     pass
+
+# Vista seleccionada por el usuario
+view_option = st.sidebar.selectbox("Vista 2D", ["Axial", "Coronal", "Sagital"])
+axis_limits = {
+    "Axial": img.shape[0] - 1,
+    "Coronal": img.shape[1] - 1,
+    "Sagital": img.shape[2] - 1
+}
+slice_ix = st.sidebar.slider('Seleccionar corte', 0, axis_limits[view_option], axis_limits[view_option] // 2)
+
+def render_2d_slice(slice_, ww, wc):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.axis('off')
+    windowed = apply_window_level(slice_, ww, wc)
+    ax.imshow(windowed, cmap='gray', origin='lower')
+    return fig
+
+if view_option == "Axial":
+    fig = render_2d_slice(img[slice_ix, :, :], window_width, window_center)
+elif view_option == "Coronal":
+    fig = render_2d_slice(img[:, slice_ix, :], window_width, window_center)
+elif view_option == "Sagital":
+    fig = render_2d_slice(img[:, :, slice_ix], window_width, window_center)
+
+st.pyplot(fig)
+
+# Opción para mostrar modelo 3D
+if st.sidebar.checkbox("Mostrar vista 3D interactiva"):
+    import plotly.graph_objects as go
+    x, y, z = np.mgrid[0:img.shape[0], 0:img.shape[1], 0:img.shape[2]]
+    fig_3d = go.Figure(data=go.Volume(
+        x=x.flatten(),
+        y=y.flatten(),
+        z=z.flatten(),
+        value=img.flatten(),
+        opacity=0.05,
+        surface_count=20,
+        colorscale="Gray"
+    ))
+    st.plotly_chart(fig_3d, use_container_width=True)
+
