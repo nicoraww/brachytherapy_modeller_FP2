@@ -46,20 +46,21 @@ st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_htm
 # Carga de archivo ZIP
 uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
+# Función para buscar series DICOM
 def find_dicom_series(directory):
     series_found = []
     for root, dirs, files in os.walk(directory):
         try:
             series_ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(root)
             for sid in series_ids:
-                files_list = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(root, sid)
-                if files_list:
-                    series_found.append((sid, root, files_list))
+                file_list = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(root, sid)
+                if file_list:
+                    series_found.append((sid, root, file_list))
         except Exception:
             continue
     return series_found
 
-
+# Función para aplicar ventana/nivel
 def apply_window_level(image, window_width, window_center):
     img_float = image.astype(float)
     min_v = window_center - window_width/2.0
@@ -69,24 +70,24 @@ def apply_window_level(image, window_width, window_center):
         return (windowed - min_v) / (max_v - min_v)
     return np.zeros_like(img_float)
 
-# Variables iniciales
+# Procesamiento inicial
 dirname = None
 if uploaded_file:
     temp_dir = tempfile.mkdtemp()
-    with zipfile.ZipFile(io.BytesIO(uploaded_file.read()), 'r') as z:
-        z.extractall(temp_dir)
+    with zipfile.ZipFile(io.BytesIO(uploaded_file.read()), 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
     dirname = temp_dir
     st.sidebar.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
 
-# Leer y procesar DICOM
+# Lectura y selección de la serie DICOM
 dicom_series = None
 img = None
 if dirname:
     with st.spinner('Buscando series DICOM...'):
         dicom_series = find_dicom_series(dirname)
     if dicom_series:
-        # Mostrar opciones de series disponibles
-        options = [f"Serie {i+1}: {sid[:10]}... ({len(files)} archivos)" for i, (sid, _, files) in enumerate(dicom_series)]
+        options = [f"Serie {i+1}: {series[0][:10]}... ({len(series[2])} archivos)" \
+                   for i, series in enumerate(dicom_series)]
         selection = st.sidebar.selectbox("Seleccionar serie DICOM:", options)
         selected_idx = options.index(selection)
         sid, dirpath, files = dicom_series[selected_idx]
@@ -97,8 +98,7 @@ if dirname:
     else:
         st.sidebar.error("No se encontraron DICOM válidos en el ZIP cargado.")
 
-# Controles y visualización
-if img is not None:
+# Visualización y controles\if img is not None:
     n_ax, n_cor, n_sag = img.shape
     st.sidebar.subheader("Opciones de visualización 2D")
     view2d = st.sidebar.selectbox("Vista 2D", ["Axial", "Coronal", "Sagital"])
@@ -117,14 +117,14 @@ if img is not None:
         ww = st.sidebar.number_input("Ancho de ventana (WW)", 1.0, default_ww*2, default_ww)
         wc = st.sidebar.number_input("Centro ventana (WL)", min_val-default_ww, max_val+default_ww, default_wc)
 
-    # Función para render 2D
+    # Función para renderizar corte 2D
     def render2d(slice2d):
         fig, ax = plt.subplots(figsize=(8, 6))
         ax.axis('off')
         ax.imshow(apply_window_level(slice2d, ww, wc), cmap='gray', origin='lower')
         return fig
 
-    # Mostrar la vista 2D
+    # Mostrar la vista 2D seleccionada
     if view2d == "Axial":
         fig2d = render2d(img[slice_ix, :, :])
     elif view2d == "Coronal":
@@ -133,7 +133,7 @@ if img is not None:
         fig2d = render2d(img[:, :, slice_ix])
     st.pyplot(fig2d)
 
-    # Vista 3D interactiva
+    # Mostrar vista 3D interactiva si se selecciona
     if st.sidebar.checkbox("Mostrar vista 3D interactiva"):
         x, y, z = np.mgrid[0:n_ax, 0:n_cor, 0:n_sag]
         fig3d = go.Figure(data=go.Volume(
@@ -142,7 +142,7 @@ if img is not None:
         ))
         st.plotly_chart(fig3d, use_container_width=True)
 
-# Título y pie de página
+# Encabezado y pie de página
 st.markdown('<p class="giant-title">Brachyanalysis</p>', unsafe_allow_html=True)
 st.markdown("""
 <hr>
