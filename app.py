@@ -8,9 +8,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 import SimpleITK as sitk
-
-# Para vista 3D interactiva
-import plotly.graph_objects as go
+import plotly.graph_objects as go  # Para vista 3D interactiva
 
 # Configuración de página y estilo
 st.set_page_config(layout="wide", page_title="Brachyanalysis")
@@ -46,29 +44,29 @@ st.sidebar.markdown('<p class="sub-header">Configuración</p>', unsafe_allow_htm
 # Carga de archivo ZIP
 uploaded_file = st.sidebar.file_uploader("Sube un archivo ZIP con tus archivos DICOM", type="zip")
 
-# Función para buscar series DICOM
+# Funciones auxiliares
 def find_dicom_series(directory):
-    series_found = []
+    series = []
     for root, dirs, files in os.walk(directory):
         try:
-            series_ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(root)
-            for sid in series_ids:
-                file_list = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(root, sid)
-                if file_list:
-                    series_found.append((sid, root, file_list))
+            ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(root)
+            for sid in ids:
+                flist = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(root, sid)
+                if flist:
+                    series.append((sid, flist))
         except Exception:
-            continue
-    return series_found
+            pass
+    return series
 
-# Función para aplicar ventana/nivel
+
 def apply_window_level(image, window_width, window_center):
-    img_float = image.astype(float)
-    min_v = window_center - window_width/2.0
-    max_v = window_center + window_width/2.0
-    windowed = np.clip(img_float, min_v, max_v)
-    if max_v != min_v:
-        return (windowed - min_v) / (max_v - min_v)
-    return np.zeros_like(img_float)
+    imgf = image.astype(float)
+    mn = window_center - window_width/2.0
+    mx = window_center + window_width/2.0
+    win = np.clip(imgf, mn, mx)
+    if mx != mn:
+        return (win - mn) / (mx - mn)
+    return np.zeros_like(imgf)
 
 # Procesamiento inicial
 dirname = None
@@ -79,68 +77,79 @@ if uploaded_file:
     dirname = temp_dir
     st.sidebar.markdown('<div class="success-box">Archivos extraídos correctamente.</div>', unsafe_allow_html=True)
 
-# Lectura y selección de la serie DICOM
-dicom_series = None
+# Leer DICOM
+dicom_series = []
 img = None
 if dirname:
     with st.spinner('Buscando series DICOM...'):
         dicom_series = find_dicom_series(dirname)
     if dicom_series:
-        options = [f"Serie {i+1}: {series[0][:10]}... ({len(series[2])} archivos)" \
-                   for i, series in enumerate(dicom_series)]
-        selection = st.sidebar.selectbox("Seleccionar serie DICOM:", options)
-        selected_idx = options.index(selection)
-        sid, dirpath, files = dicom_series[selected_idx]
+        options = [f"Serie {i+1}: {sid[:10]}... ({len(flist)} archivos)"
+                   for i, (sid, flist) in enumerate(dicom_series)]
+        choice = st.sidebar.selectbox("Seleccionar serie DICOM:", options)
+        idx = options.index(choice)
+        sid, flist = dicom_series[idx]
         reader = sitk.ImageSeriesReader()
-        reader.SetFileNames(files)
-        data = reader.Execute()
-        img = sitk.GetArrayViewFromImage(data)
+        reader.SetFileNames(flist)
+        img = sitk.GetArrayViewFromImage(reader.Execute())
     else:
         st.sidebar.error("No se encontraron DICOM válidos en el ZIP cargado.")
 
-# Visualización y controles\if img is not None:
+# Visualización y controles
+if img is not None:
+    # Dimensiones
     n_ax, n_cor, n_sag = img.shape
-    st.sidebar.subheader("Opciones de visualización 2D")
-    view2d = st.sidebar.selectbox("Vista 2D", ["Axial", "Coronal", "Sagital"])
-    max_idx = {'Axial': n_ax-1, 'Coronal': n_cor-1, 'Sagital': n_sag-1}[view2d]
-    slice_ix = st.sidebar.slider('Corte', 0, max_idx, max_idx//2)
+
+    # Sliders para cada vista
+    st.sidebar.subheader("Selección de cortes")
+    slice_axial   = st.sidebar.slider('Corte Axial',   0, n_ax-1, n_ax//2)
+    slice_coronal = st.sidebar.slider('Corte Coronal', 0, n_cor-1, n_cor//2)
+    slice_sagital = st.sidebar.slider('Corte Sagital', 0, n_sag-1, n_sag//2)
 
     # Presets de ventana
-    min_val, max_val = float(img.min()), float(img.max())
-    default_ww = max_val - min_val
-    default_wc = min_val + default_ww/2
+    mn, mx = float(img.min()), float(img.max())
+    default_ww = mx - mn
+    default_wc = mn + default_ww/2
     presets = {"Default": (default_ww, default_wc), "CT Abdomen": (350, 50), "CT Bone": (2000, 350), "Custom": None}
-    preset_choice = st.sidebar.selectbox("Presets ventana", list(presets.keys()))
-    if preset_choice != "Custom":
-        ww, wc = presets[preset_choice]
+    sel = st.sidebar.selectbox("Presets ventana", list(presets.keys()))
+    if presets[sel] is not None:
+        ww, wc = presets[sel]
     else:
-        ww = st.sidebar.number_input("Ancho de ventana (WW)", 1.0, default_ww*2, default_ww)
-        wc = st.sidebar.number_input("Centro ventana (WL)", min_val-default_ww, max_val+default_ww, default_wc)
+        ww = st.sidebar.number_input("Ancho de ventana (WW)", 1.0, mw if (mw:=mx-mn)>0 else 1.0, default_ww)
+        wc = st.sidebar.number_input("Centro de ventana (WL)", mn-default_ww, mx+default_ww, default_wc)
 
-    # Función para renderizar corte 2D
-    def render2d(slice2d):
-        fig, ax = plt.subplots(figsize=(8, 6))
+    # Checkbox 3D\    show_3d = st.sidebar.checkbox("Mostrar vista 3D interactiva")
+
+    # Función render 2D\    def render2d(slice2d):
+        fig, ax = plt.subplots(figsize=(5, 5))
         ax.axis('off')
         ax.imshow(apply_window_level(slice2d, ww, wc), cmap='gray', origin='lower')
         return fig
 
-    # Mostrar la vista 2D seleccionada
-    if view2d == "Axial":
-        fig2d = render2d(img[slice_ix, :, :])
-    elif view2d == "Coronal":
-        fig2d = render2d(img[:, slice_ix, :])
-    else:
-        fig2d = render2d(img[:, :, slice_ix])
-    st.pyplot(fig2d)
+    # Construir grid 2x2
+    row1_col1, row1_col2 = st.columns(2)
+    with row1_col1:
+        st.subheader("Axial")
+        st.pyplot(render2d(img[slice_axial, :, :]))
+    with row1_col2:
+        st.subheader("Coronal")
+        st.pyplot(render2d(img[:, slice_coronal, :]))
 
-    # Mostrar vista 3D interactiva si se selecciona
-    if st.sidebar.checkbox("Mostrar vista 3D interactiva"):
-        x, y, z = np.mgrid[0:n_ax, 0:n_cor, 0:n_sag]
-        fig3d = go.Figure(data=go.Volume(
-            x=x.flatten(), y=y.flatten(), z=z.flatten(),
-            value=img.flatten(), opacity=0.05, surface_count=20
-        ))
-        st.plotly_chart(fig3d, use_container_width=True)
+    row2_col1, row2_col2 = st.columns(2)
+    with row2_col1:
+        st.subheader("Sagital")
+        st.pyplot(render2d(img[:, :, slice_sagital]))
+    with row2_col2:
+        st.subheader("Vista 3D")
+        if show_3d:
+            x, y, z = np.mgrid[0:n_ax, 0:n_cor, 0:n_sag]
+            fig3d = go.Figure(data=go.Volume(
+                x=x.flatten(), y=y.flatten(), z=z.flatten(),
+                value=img.flatten(), opacity=0.05, surface_count=20
+            ))
+            st.plotly_chart(fig3d, use_container_width=True)
+        else:
+            st.info("Marca 'Mostrar vista 3D interactiva' en la barra lateral para visualizar.")
 
 # Encabezado y pie de página
 st.markdown('<p class="giant-title">Brachyanalysis</p>', unsafe_allow_html=True)
