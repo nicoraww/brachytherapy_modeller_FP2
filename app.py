@@ -149,7 +149,7 @@ if img is not None:
                 z=z.flatten(),
                 value=downsampled_img.flatten(),
                 opacity=50,
-                surface_count=20,
+                surface_count=0.08,
                 colorscale="Gray"
             ))
             fig3d.update_layout(scene=dict(
